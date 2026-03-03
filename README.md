@@ -8,21 +8,37 @@ Recover your Cloaked stealth address private keys — entirely client-side.
 
 ## What is this?
 
-A standalone recovery tool for [Cloaked](https://staycloaked.xyz) stealth addresses. If you need to verify your stealth addresses or recover funds as a last resort, this tool derives your stealth private keys using only your wallet signature and PIN — no servers, no API calls, no logging.
+A standalone recovery tool for [Cloaked](https://staycloaked.xyz) stealth addresses. If you need to verify your stealth addresses or recover funds as a last resort, this tool derives your stealth private keys locally in your browser — no servers, no API calls, no logging.
+
+Two recovery methods are supported:
+
+- **Wallet + PIN** — connect the wallet you used to create your account and enter your 4-digit PIN
+- **Backup file** — upload the encrypted `.json` backup file you downloaded during setup and enter your backup password
+
+Both paths produce the same output: a table of stealth addresses and their private keys that you can import into any wallet.
 
 ## How it works
 
-1. **Connect** the wallet you used to create your Cloaked account
-2. **Enter** your 4-digit PIN
-3. **Sign** a message with your wallet (generates the cryptographic seed)
-4. **View** your derived stealth addresses and private keys
+### Wallet + PIN
 
-All key derivation happens locally in your browser using [`@cloakedxyz/clkd-stealth`](https://github.com/cloakedxyz/clkd-stealth). Nothing is sent to any server.
+1. Connect your wallet
+2. Enter your 4-digit PIN
+3. Sign a message (generates the cryptographic seed)
+4. View your derived stealth addresses and private keys
+
+### Backup file
+
+1. Upload your encrypted backup file (`.json`)
+2. Enter the password you chose when creating the backup
+3. View your derived stealth addresses and private keys
+
+All key derivation happens locally in your browser using [`@cloakedxyz/clkd-stealth`](https://github.com/cloakedxyz/clkd-stealth). Backup decryption uses PBKDF2-SHA256 (600k iterations) + AES-256-GCM via [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers). Nothing is sent to any server.
 
 ## Security
 
-- Zero API calls — all derivation is client-side
-- Private keys are held only in React component state and cleared on disconnect
+- Zero API calls — all derivation and decryption is client-side
+- Private keys are held only in React component state and cleared on navigation/disconnect
+- Key material buffers are zeroed immediately after use
 - Security headers enforced via Next.js config
 - Console warning deters social engineering attacks
 - Open source so you can verify the code yourself
@@ -30,18 +46,13 @@ All key derivation happens locally in your browser using [`@cloakedxyz/clkd-stea
 ## Running locally
 
 ```bash
-# Clone the repo
 git clone https://github.com/cloakedxyz/clkd-recovery.git
 cd clkd-recovery
-
-# Install dependencies
 pnpm install
 
-# Set up environment variables
 cp .env.example .env.local
 # Add your WalletConnect project ID to .env.local
 
-# Start the dev server
 pnpm dev
 ```
 
@@ -59,6 +70,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - [Tailwind CSS](https://tailwindcss.com/)
 - [wagmi v2](https://wagmi.sh/) + [viem](https://viem.sh/)
 - [@cloakedxyz/clkd-stealth](https://github.com/cloakedxyz/clkd-stealth)
+- [@noble/ciphers](https://github.com/paulmillr/noble-ciphers) + [@noble/hashes](https://github.com/paulmillr/noble-hashes)
 
 ## License
 

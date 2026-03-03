@@ -6,9 +6,10 @@ import { type Hex } from 'viem';
 import { genCloakedMessage } from '@cloakedxyz/clkd-stealth';
 import { WalletSelectModal } from '~/components/WalletSelectModal';
 import { PostRecoveryGuide } from '~/components/PostRecoveryGuide';
-import { deriveStealthKeys, type DerivedKey } from '~/lib/deriveKeys';
+import { deriveStealthKeys, deriveStealthKeysFromRaw, type DerivedKey } from '~/lib/deriveKeys';
+import { decryptRecoveryKit, type RecoveryKitFile } from '~/lib/decryptBackup';
 
-type Step = 'connect' | 'pin' | 'sign' | 'results';
+type Step = 'method' | 'connect' | 'pin' | 'sign' | 'backup-upload' | 'backup-decrypt' | 'results';
 
 const BATCH_SIZE = 50;
 const INITIAL_COUNT = 500;
@@ -19,7 +20,8 @@ export default function RecoveryPage() {
   const { signMessageAsync } = useSignMessage();
 
   const [mounted, setMounted] = useState(false);
-  const [step, setStep] = useState<Step>('connect');
+  const [step, setStep] = useState<Step>('method');
+  const [recoveryMethod, setRecoveryMethod] = useState<'wallet' | 'backup' | null>(null);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [pin, setPin] = useState(['', '', '', '']);
   const [pinVisible, setPinVisible] = useState([false, false, false, false]);
@@ -34,6 +36,18 @@ export default function RecoveryPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const PAGE_SIZE = 50;
 
+  // Backup flow state —
+  // rawKeys holds decrypted spending/viewing keys in memory for "Derive More".
+  // These are sensitive and only live in component state (cleared on unmount / method switch).
+  const [backupFile, setBackupFile] = useState<RecoveryKitFile | null>(null);
+  const [backupPassword, setBackupPassword] = useState('');
+  const [decryptError, setDecryptError] = useState<string | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
+  const [backupFileError, setBackupFileError] = useState<string | null>(null);
+  const [rawKeys, setRawKeys] = useState<{ pSpend: Hex; pView: Hex } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
   const pinRefs = [
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
@@ -45,16 +59,16 @@ export default function RecoveryPage() {
     setMounted(true);
   }, []);
 
-  // Advance to PIN step when wallet connects
+  // Advance to PIN step when wallet connects (only in wallet flow)
   useEffect(() => {
-    if (isConnected && step === 'connect') {
+    if (isConnected && step === 'connect' && recoveryMethod === 'wallet') {
       setStep('pin');
     }
-  }, [isConnected, step]);
+  }, [isConnected, step, recoveryMethod]);
 
-  // Clear keys on disconnect
+  // Clear keys on disconnect (only in wallet flow)
   useEffect(() => {
-    if (!isConnected) {
+    if (!isConnected && recoveryMethod === 'wallet') {
       setStep('connect');
       setPin(['', '', '', '']);
       setPinVisible([false, false, false, false]);
@@ -63,7 +77,14 @@ export default function RecoveryPage() {
       setProgress(0);
       setSignError(null);
     }
-  }, [isConnected]);
+  }, [isConnected, recoveryMethod]);
+
+  // Auto-focus password input on backup-decrypt step
+  useEffect(() => {
+    if (step === 'backup-decrypt') {
+      setTimeout(() => passwordInputRef.current?.focus(), 100);
+    }
+  }, [step]);
 
   const handlePinChange = (index: number, value: string) => {
     if (!/^\d?$/.test(value)) return;
@@ -122,8 +143,14 @@ export default function RecoveryPage() {
     }
   };
 
-  const deriveKeysInBatches = useCallback(
-    async (signature: Hex, totalCount: number, startFrom: number = 0) => {
+  // Batch derivation — shared by both wallet+PIN and backup flows.
+  // Takes a deriveFn so callers choose which key source to use.
+  const deriveInBatches = useCallback(
+    async (
+      deriveFn: (startNonce: number, count: number) => DerivedKey[],
+      totalCount: number,
+      startFrom: number = 0
+    ) => {
       setDeriving(true);
       setProgress(0);
 
@@ -137,7 +164,7 @@ export default function RecoveryPage() {
         // Yield to UI between batches
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        const batchKeys = deriveStealthKeys(signature, batchStart, batchCount);
+        const batchKeys = deriveFn(batchStart, batchCount);
         allKeys.push(...batchKeys);
         setDerivedKeys([...allKeys]);
         setProgress(Math.round(((i + 1) / batches) * 100));
@@ -164,7 +191,7 @@ export default function RecoveryPage() {
       const sig = (await signMessageAsync({ message })) as Hex;
       setSignature(sig);
       setStep('results');
-      await deriveKeysInBatches(sig, INITIAL_COUNT);
+      await deriveInBatches((s, c) => deriveStealthKeys(sig, s, c), INITIAL_COUNT);
     } catch (err) {
       if (
         err instanceof Error &&
@@ -181,9 +208,18 @@ export default function RecoveryPage() {
   };
 
   const handleDeriveMore = async () => {
-    if (!signature) return;
     const nextStart = derivedKeys.length;
-    await deriveKeysInBatches(signature, INITIAL_COUNT, nextStart);
+    if (recoveryMethod === 'backup' && rawKeys) {
+      const { pSpend, pView } = rawKeys;
+      await deriveInBatches(
+        (s, c) => deriveStealthKeysFromRaw(pSpend, pView, s, c),
+        INITIAL_COUNT,
+        nextStart
+      );
+    } else if (signature) {
+      const sig = signature;
+      await deriveInBatches((s, c) => deriveStealthKeys(sig, s, c), INITIAL_COUNT, nextStart);
+    }
   };
 
   const handleCopy = async (text: string, index: number) => {
@@ -204,21 +240,111 @@ export default function RecoveryPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cloaked-recovery-${address?.slice(0, 8)}.json`;
+    a.download =
+      recoveryMethod === 'backup'
+        ? 'cloaked-recovery-backup.json'
+        : `cloaked-recovery-${address?.slice(0, 8)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleTryDifferentPin = () => {
-    setStep('pin');
-    setDerivedKeys([]);
-    setProgress(0);
-    setSignature(null);
-    setCurrentPage(0);
+  const handleRetry = () => {
+    if (recoveryMethod === 'backup') {
+      // Reset backup flow
+      setBackupFile(null);
+      setBackupPassword('');
+      setDecryptError(null);
+      setRawKeys(null);
+      setDerivedKeys([]);
+      setProgress(0);
+      setCurrentPage(0);
+      setStep('backup-upload');
+    } else {
+      setStep('pin');
+      setDerivedKeys([]);
+      setProgress(0);
+      setSignature(null);
+      setCurrentPage(0);
+    }
   };
 
   const handleDisconnect = () => {
     disconnect();
+  };
+
+  // Backup file upload handler
+  const handleBackupFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBackupFileError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result as string);
+
+        // Validate required fields
+        if (
+          parsed.version !== 1 ||
+          parsed.hasPassword !== true ||
+          typeof parsed.ciphertext !== 'string' ||
+          typeof parsed.iv !== 'string' ||
+          typeof parsed.salt !== 'string'
+        ) {
+          setBackupFileError(
+            "This doesn't look like a Cloaked backup file. Please select the .json file you downloaded during setup."
+          );
+          return;
+        }
+
+        setBackupFile(parsed as RecoveryKitFile);
+        setStep('backup-decrypt');
+      } catch {
+        setBackupFileError(
+          "This doesn't look like a Cloaked backup file. Please select the .json file you downloaded during setup."
+        );
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset the input so the same file can be re-selected
+    e.target.value = '';
+  };
+
+  // Backup decrypt handler
+  const handleBackupDecrypt = async () => {
+    if (!backupFile) return;
+    setDecrypting(true);
+    setDecryptError(null);
+
+    try {
+      const { pSpend, pView } = await decryptRecoveryKit(backupFile, backupPassword);
+      setRawKeys({ pSpend, pView });
+      setStep('results');
+      // Use nonce hint from backup to derive exactly the addresses the server created,
+      // otherwise fall back to the default count
+      const count =
+        backupFile.lastConsumedNonce != null ? backupFile.lastConsumedNonce + 1 : INITIAL_COUNT;
+      await deriveInBatches((s, c) => deriveStealthKeysFromRaw(pSpend, pView, s, c), count);
+    } catch (err) {
+      // @noble/ciphers throws "tag doesn't match" on AES-GCM auth failure (wrong password).
+      // Our own decryptBackup throws "malformed" if the decrypted payload has an unexpected shape.
+      if (err instanceof Error && err.message.includes('tag doesn')) {
+        setDecryptError('Incorrect password. Please try again.');
+      } else if (err instanceof Error && err.message.includes('malformed')) {
+        setDecryptError('This backup file appears to be corrupted.');
+      } else {
+        setDecryptError(err instanceof Error ? err.message : 'Decryption failed.');
+      }
+    } finally {
+      setDecrypting(false);
+    }
+  };
+
+  const handleBackupPasswordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && backupPassword && !decrypting) {
+      handleBackupDecrypt();
+    }
   };
 
   if (!mounted) {
@@ -234,7 +360,7 @@ export default function RecoveryPage() {
             <img src="/cloaked_logo.png" alt="Cloaked" className="w-10 h-10" />
             <h1 className="text-2xl font-bold text-text-primary">Cloaked Recovery</h1>
           </div>
-          {isConnected && address && (
+          {recoveryMethod === 'wallet' && isConnected && address && (
             <div className="flex items-center gap-3 animate-fade-in">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-status-green" />
@@ -275,6 +401,102 @@ export default function RecoveryPage() {
 
       {/* Step Content */}
       <div className="w-full max-w-2xl">
+        {/* Step: Method Selection */}
+        {step === 'method' && (
+          <div className="animate-fabric-wave flex flex-col items-center gap-6 py-12">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#7B4DFF"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="M12 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" />
+                <path d="M12 14v-1" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-text-primary mb-2">
+                How did you set up Cloaked?
+              </h2>
+              <p className="text-text-muted text-sm">
+                Choose your recovery method based on how you created your account.
+              </p>
+            </div>
+            <div className="w-full max-w-md flex flex-col gap-3">
+              {/* Wallet + PIN card */}
+              <button
+                onClick={() => {
+                  setRecoveryMethod('wallet');
+                  setStep('connect');
+                }}
+                className="w-full flex items-start gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#7B4DFF"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M19 7V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" />
+                    <path d="M22 11h-6a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2h6v-4z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">Wallet + PIN</p>
+                  <p className="text-sm text-text-muted mt-0.5">
+                    I connected a wallet and set a 4-digit PIN
+                  </p>
+                </div>
+              </button>
+
+              {/* Backup File card */}
+              <button
+                onClick={() => {
+                  setRecoveryMethod('backup');
+                  setStep('backup-upload');
+                }}
+                className="w-full flex items-start gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#7B4DFF"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <line x1="9" y1="15" x2="12" y2="12" />
+                    <line x1="15" y1="15" x2="12" y2="12" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">Backup File</p>
+                  <p className="text-sm text-text-muted mt-0.5">
+                    I have an encrypted backup file (.json)
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Step 1: Connect Wallet */}
         {step === 'connect' && (
           <div className="animate-fabric-wave flex flex-col items-center gap-6 py-12">
@@ -299,12 +521,23 @@ export default function RecoveryPage() {
                 Connect the wallet you used to create your Cloaked account.
               </p>
             </div>
-            <button
-              onClick={() => setShowWalletModal(true)}
-              className="bg-primary hover:bg-primary-light active:bg-primary-dark text-white font-semibold px-8 py-3 rounded-lg shadow-button transition-all"
-            >
-              Connect Wallet
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setRecoveryMethod(null);
+                  setStep('method');
+                }}
+                className="text-text-muted hover:text-text-primary font-medium px-6 py-3 rounded-lg border border-gray-200 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => setShowWalletModal(true)}
+                className="bg-primary hover:bg-primary-light active:bg-primary-dark text-white font-semibold px-8 py-3 rounded-lg shadow-button transition-all"
+              >
+                Connect Wallet
+              </button>
+            </div>
           </div>
         )}
 
@@ -464,7 +697,168 @@ export default function RecoveryPage() {
           </div>
         )}
 
-        {/* Step 4: Results */}
+        {/* Step: Backup Upload */}
+        {step === 'backup-upload' && (
+          <div className="animate-fabric-wave flex flex-col items-center gap-6 py-12">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#7B4DFF"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-text-primary mb-2">Upload Your Backup</h2>
+              <p className="text-text-muted text-sm max-w-md">
+                Select the encrypted backup file (.json) you downloaded when setting up your
+                account.
+              </p>
+            </div>
+
+            {/* Drop zone / file picker */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full max-w-md border-2 border-dashed border-gray-300 hover:border-primary rounded-lg p-8 flex flex-col items-center gap-3 transition-colors hover:bg-primary/5 cursor-pointer"
+            >
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#9CA3AF"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <p className="text-sm text-text-muted">
+                Click to select your <span className="font-medium text-text-primary">.json</span>{' '}
+                backup file
+              </p>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleBackupFileSelect}
+              className="hidden"
+            />
+
+            {backupFileError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 w-full max-w-md">
+                <p className="text-red-600 text-sm">{backupFileError}</p>
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setRecoveryMethod(null);
+                setBackupFileError(null);
+                setStep('method');
+              }}
+              className="text-text-muted hover:text-text-primary font-medium px-6 py-3 rounded-lg border border-gray-200 transition-colors"
+            >
+              Back
+            </button>
+          </div>
+        )}
+
+        {/* Step: Backup Decrypt */}
+        {step === 'backup-decrypt' && (
+          <div className="animate-fabric-wave flex flex-col items-center gap-6 py-12">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#7B4DFF"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-text-primary mb-2">
+                Enter Your Backup Password
+              </h2>
+              <p className="text-text-muted text-sm max-w-md">
+                Enter the password you chose when creating this backup.
+              </p>
+            </div>
+
+            <div className="w-full max-w-md">
+              <input
+                ref={passwordInputRef}
+                type="password"
+                value={backupPassword}
+                onChange={(e) => setBackupPassword(e.target.value)}
+                onKeyDown={handleBackupPasswordKeyDown}
+                placeholder="Enter backup password"
+                className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              />
+            </div>
+
+            {decryptError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 w-full max-w-md">
+                <p className="text-red-600 text-sm">{decryptError}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setBackupPassword('');
+                  setDecryptError(null);
+                  setStep('backup-upload');
+                }}
+                className="text-text-muted hover:text-text-primary font-medium px-6 py-3 rounded-lg border border-gray-200 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleBackupDecrypt}
+                disabled={!backupPassword || decrypting}
+                className="bg-primary hover:bg-primary-light active:bg-primary-dark text-white font-semibold px-8 py-3 rounded-lg shadow-button transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
+              >
+                {decrypting && (
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                {decrypting ? 'Decrypting...' : 'Decrypt & Recover'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step: Results */}
         {step === 'results' && (
           <div className="animate-fade-in">
             {/* Progress bar during derivation */}
@@ -508,7 +902,10 @@ export default function RecoveryPage() {
 
             {/* Post-recovery guidance */}
             {derivedKeys.length > 0 && !deriving && (
-              <PostRecoveryGuide onTryDifferentPin={handleTryDifferentPin} />
+              <PostRecoveryGuide
+                onRetry={handleRetry}
+                recoveryMethod={recoveryMethod ?? 'wallet'}
+              />
             )}
 
             {/* Keys table */}

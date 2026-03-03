@@ -3,7 +3,8 @@
 import { useState } from 'react';
 
 interface PostRecoveryGuideProps {
-  onTryDifferentPin: () => void;
+  onRetry: () => void;
+  recoveryMethod: 'wallet' | 'backup';
 }
 
 function ChevronIcon({ open }: { open: boolean }) {
@@ -19,7 +20,7 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-export function PostRecoveryGuide({ onTryDifferentPin }: PostRecoveryGuideProps) {
+export function PostRecoveryGuide({ onRetry, recoveryMethod }: PostRecoveryGuideProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     what: false,
     how: false,
@@ -110,39 +111,68 @@ export function PostRecoveryGuide({ onTryDifferentPin }: PostRecoveryGuideProps)
 
       <hr className="border-gray-200" />
 
-      {/* Section 3 */}
-      <div className="bg-amber-50/50">
-        <button
-          type="button"
-          onClick={() => toggle('wrongPin')}
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-50 transition-colors"
-        >
-          <span className="text-sm font-semibold text-amber-700">Wrong PIN?</span>
-          <ChevronIcon open={openSections.wrongPin} />
-        </button>
-        {openSections.wrongPin && (
-          <div className="px-4 pb-4 text-sm text-amber-800 space-y-2">
-            <p>
-              <strong>Entering an incorrect PIN will still produce keys</strong>, but they
-              won&apos;t be the right ones.
-            </p>
-            <p>
-              If you don&apos;t recognize any of these addresses, you likely entered the wrong PIN.
-            </p>
-            <p className="text-xs">
-              If you forgot your PIN, there are only 10,000 possible combinations (0000-9999). You
-              can try different PINs until you find addresses you recognize.
-            </p>
-            <button
-              type="button"
-              onClick={onTryDifferentPin}
-              className="mt-1 text-sm font-medium text-amber-700 hover:text-amber-900 px-3 py-1.5 rounded-md border border-amber-300 hover:border-amber-400 transition-colors"
-            >
-              Try Different PIN
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Section 3: Wrong PIN? or Wrong backup? */}
+      {recoveryMethod === 'wallet' ? (
+        <div className="bg-amber-50/50">
+          <button
+            type="button"
+            onClick={() => toggle('wrongPin')}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-50 transition-colors"
+          >
+            <span className="text-sm font-semibold text-amber-700">Wrong PIN?</span>
+            <ChevronIcon open={openSections.wrongPin} />
+          </button>
+          {openSections.wrongPin && (
+            <div className="px-4 pb-4 text-sm text-amber-800 space-y-2">
+              <p>
+                <strong>Entering an incorrect PIN will still produce keys</strong>, but they
+                won&apos;t be the right ones.
+              </p>
+              <p>
+                If you don&apos;t recognize any of these addresses, you likely entered the wrong
+                PIN.
+              </p>
+              <p className="text-xs">
+                If you forgot your PIN, there are only 10,000 possible combinations (0000-9999). You
+                can try different PINs until you find addresses you recognize.
+              </p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-1 text-sm font-medium text-amber-700 hover:text-amber-900 px-3 py-1.5 rounded-md border border-amber-300 hover:border-amber-400 transition-colors"
+              >
+                Try Different PIN
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-amber-50/50">
+          <button
+            type="button"
+            onClick={() => toggle('wrongPin')}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-50 transition-colors"
+          >
+            <span className="text-sm font-semibold text-amber-700">Wrong backup?</span>
+            <ChevronIcon open={openSections.wrongPin} />
+          </button>
+          {openSections.wrongPin && (
+            <div className="px-4 pb-4 text-sm text-amber-800 space-y-2">
+              <p>
+                If you don&apos;t recognize these addresses, you may have uploaded the wrong backup
+                file or this backup was created for a different account.
+              </p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-1 text-sm font-medium text-amber-700 hover:text-amber-900 px-3 py-1.5 rounded-md border border-amber-300 hover:border-amber-400 transition-colors"
+              >
+                Try Different Backup
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

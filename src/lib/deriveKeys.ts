@@ -15,7 +15,24 @@ export interface DerivedKey {
 
 export function deriveStealthKeys(signature: Hex, startNonce: number, count: number): DerivedKey[] {
   const keys = genKeysFromSignature(signature);
-  const childViewingNode = deriveChildViewingNode(keys.p_view);
+  return deriveStealthKeysFromRaw(keys.p_spend, keys.p_view, startNonce, count);
+}
+
+/**
+ * Derive stealth address key pairs from raw spending/viewing keys.
+ *
+ * Used by the backup-file recovery flow where p_spend and p_view are obtained
+ * directly from decrypting the backup, bypassing wallet signature + genKeysFromSignature.
+ *
+ * Derivation: pView → childViewingNode → ephemeral key per nonce → stealth private key.
+ */
+export function deriveStealthKeysFromRaw(
+  pSpend: Hex,
+  pView: Hex,
+  startNonce: number,
+  count: number
+): DerivedKey[] {
+  const childViewingNode = deriveChildViewingNode(pView);
 
   const results: DerivedKey[] = [];
 
@@ -28,7 +45,7 @@ export function deriveStealthKeys(signature: Hex, startNonce: number, count: num
     const P_derived = derivedAccount.publicKey;
 
     const { p_stealth } = genStealthPrivateKey({
-      p_spend: keys.p_spend,
+      p_spend: pSpend,
       P_derived: P_derived as `0x${string}`,
     });
 
