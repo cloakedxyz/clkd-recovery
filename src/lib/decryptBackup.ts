@@ -27,7 +27,8 @@ export interface RecoveryKitFile {
   iv: string; // base64
   salt: string; // base64
   createdAt: number; // epoch ms
-  label: string; // human-readable identifier, e.g. "bright-falcon"
+  /** Last consumed stealth address nonce at time of backup. Helps determine how many addresses to derive. */
+  lastConsumedNonce?: number;
 }
 
 // ---------------------------------------------------------------------------

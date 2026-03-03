@@ -321,7 +321,13 @@ export default function RecoveryPage() {
       const { pSpend, pView } = await decryptRecoveryKit(backupFile, backupPassword);
       setRawKeys({ pSpend, pView });
       setStep('results');
-      await deriveInBatches((s, c) => deriveStealthKeysFromRaw(pSpend, pView, s, c), INITIAL_COUNT);
+      // Use nonce hint from backup to derive exactly the addresses the server created,
+      // otherwise fall back to the default count
+      const count =
+        backupFile.lastConsumedNonce != null
+          ? backupFile.lastConsumedNonce + 1
+          : INITIAL_COUNT;
+      await deriveInBatches((s, c) => deriveStealthKeysFromRaw(pSpend, pView, s, c), count);
     } catch (err) {
       // @noble/ciphers throws "tag doesn't match" on AES-GCM auth failure (wrong password).
       // Our own decryptBackup throws "malformed" if the decrypted payload has an unexpected shape.
@@ -795,11 +801,6 @@ export default function RecoveryPage() {
               <p className="text-text-muted text-sm max-w-md">
                 Enter the password you chose when creating this backup.
               </p>
-              {backupFile?.label && (
-                <p className="text-text-muted text-xs mt-2">
-                  Backup: <span className="font-medium">{backupFile.label}</span>
-                </p>
-              )}
             </div>
 
             <div className="w-full max-w-md">
