@@ -2,13 +2,13 @@
 
 Recover your Cloaked stealth address private keys — entirely client-side.
 
-### [recovery.staycloaked.xyz](https://recovery.staycloaked.xyz)
+### [recovery.clkd.xyz](https://recovery.clkd.xyz)
 
 ---
 
 ## What is this?
 
-A standalone recovery tool for [Cloaked](https://staycloaked.xyz) stealth addresses. If you need to verify your stealth addresses or recover funds as a last resort, this tool derives your stealth private keys locally in your browser — no servers, no API calls, no logging.
+A standalone recovery tool for [Cloaked](https://clkd.xyz) stealth addresses. If you need to verify your stealth addresses or recover funds as a last resort, this tool derives your stealth private keys locally in your browser — no servers, no API calls, no logging.
 
 Two recovery methods are supported:
 
