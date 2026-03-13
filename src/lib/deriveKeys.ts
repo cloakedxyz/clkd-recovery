@@ -1,5 +1,6 @@
 import type { Hex } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { hexToBytes, toHex } from 'viem';
+import { HDKey, privateKeyToAccount } from 'viem/accounts';
 import {
   genKeysFromSignature,
   deriveChildViewingNode,
@@ -32,7 +33,12 @@ export function deriveStealthKeysFromRaw(
   startNonce: number,
   count: number
 ): DerivedKey[] {
-  const childViewingNode = deriveChildViewingNode(pView);
+  // Derive the child viewing node, then re-wrap its private key as a fresh
+  // HDKey master seed. This matches the server which stores only the child's
+  // private key and reconstitutes it via HDKey.fromMasterSeed(child_p_view).
+  const childNode = deriveChildViewingNode(pView);
+  const childPrivateKey = childNode.privateKey!;
+  const childViewingNode = HDKey.fromMasterSeed(hexToBytes(toHex(childPrivateKey)));
 
   const results: DerivedKey[] = [];
 

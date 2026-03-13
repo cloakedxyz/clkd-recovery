@@ -994,9 +994,8 @@ export default function RecoveryPage() {
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-mono text-text-primary text-xs">
-                                        {key.privateKey.slice(0, 10)}...
-                                        {key.privateKey.slice(-8)}
+                                      <span className="font-mono text-text-primary text-xs tracking-wider">
+                                        ••••••••••••••••••••
                                       </span>
                                       <button
                                         onClick={() =>
