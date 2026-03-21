@@ -24,12 +24,14 @@ interface PoolDeposit {
 }
 
 interface Props {
+  /** The wallet signature used for key derivation */
   signature: Hex;
   chainId: 1 | 11155111;
 }
 
 const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
-const MAX_INDEX_SCAN = 50;
+/** Max deposit index to scan — covers heavy users */
+const MAX_INDEX_SCAN = 1000;
 const PP_UI_URL = 'https://app.privacypools.com';
 
 export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
@@ -57,15 +59,16 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
 
+      // Derive PP mnemonic from wallet signature
       const mnemonic = await deriveMnemonic(signature);
       const masterKeys = deriveMasterKeys(mnemonic);
 
-      const scopeRes = await client.readContract({
+      // Read pool scope
+      const scope = (await client.readContract({
         address: poolConfig.address as `0x${string}`,
         abi: POOL_ABI,
         functionName: 'SCOPE',
-      });
-      const scope = scopeRes as bigint;
+      })) as bigint;
 
       const latestBlock = await client.getBlockNumber();
       const startBlock = customStartBlock
@@ -78,6 +81,10 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
 
       setScanProgress(`Scanning ${totalBlocks.toLocaleString()} blocks...`);
 
+      // Scan all Deposited events in the range, then match by precommitment.
+      // This works regardless of which stealth address made the deposit —
+      // the precommitment is derived from the wallet signature + scope + index,
+      // so it's the same for any depositor address.
       const { depositsByPrecommitment } = await scanPoolEvents(
         client as any,
         poolConfig.address as `0x${string}`,
@@ -95,8 +102,11 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
         }
       );
 
-      setScanProgress('Checking deposit indices...');
+      setScanProgress('Matching deposits to your keys...');
 
+      // Check each index to see if the user deposited at that index.
+      // The precommitment is deterministic: same wallet + same scope + same index = same precommitment.
+      // Stop after 20 consecutive misses once we've found at least one deposit.
       const found: PoolDeposit[] = [];
       let consecutiveMisses = 0;
 
@@ -119,11 +129,12 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
           consecutiveMisses = 0;
         } else {
           consecutiveMisses++;
-          if (consecutiveMisses >= 10 && found.length > 0) break;
+          if (consecutiveMisses >= 20 && found.length > 0) break;
         }
       }
 
       // Check ASP status for each deposit
+      setScanProgress('Checking ASP status...');
       for (const d of found) {
         try {
           const status = await getDepositStatus(
