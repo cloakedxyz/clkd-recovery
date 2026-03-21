@@ -23,9 +23,11 @@ interface PoolDeposit {
   reviewStatus: ReviewStatus | 'unknown' | 'scanning';
 }
 
+type DeriveInput = { signature: Hex } | { spendSecret: Hex; viewSecret: Hex };
+
 interface Props {
-  /** The wallet signature used for key derivation */
-  signature: Hex;
+  /** Entropy source — signature (wallet+PIN) or PRF secrets (backup) */
+  deriveInput: DeriveInput;
   chainId: 1 | 11155111;
 }
 
@@ -33,7 +35,7 @@ const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
 
 const PP_UI_URL = 'https://app.privacypools.com';
 
-export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
+export function PrivacyPoolsRecovery({ deriveInput, chainId }: Props) {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [deposits, setDeposits] = useState<PoolDeposit[]>([]);
@@ -59,8 +61,8 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
 
-      // Derive PP mnemonic from wallet signature
-      const mnemonic = await deriveMnemonic(signature);
+      // Derive PP mnemonic from wallet signature or PRF secrets
+      const mnemonic = await deriveMnemonic(deriveInput);
       const masterKeys = deriveMasterKeys(mnemonic);
 
       // Read pool scope
@@ -140,7 +142,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
     } finally {
       setScanning(false);
     }
-  }, [signature, chainId, customStartBlock, customEndBlock, maxIndex]);
+  }, [deriveInput, chainId, customStartBlock, customEndBlock, maxIndex]);
 
   const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
 

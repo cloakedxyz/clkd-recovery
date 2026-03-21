@@ -1074,17 +1074,28 @@ export default function RecoveryPage() {
                 );
               })()}
 
-            {/* Privacy Pools Recovery — wallet flow only (needs signature for PP key derivation) */}
-            {recoveryMethod === 'wallet' && signature && !deriving && derivedKeys.length > 0 && (
-              <PrivacyPoolsRecovery
-                signature={signature}
-                chainId={
-                  typeof window !== 'undefined' && window.location.hostname === 'localhost'
-                    ? 11155111
-                    : 1
-                }
-              />
-            )}
+            {/* Privacy Pools Recovery — both wallet+PIN and backup flows */}
+            {!deriving &&
+              derivedKeys.length > 0 &&
+              (recoveryMethod === 'wallet' && signature ? (
+                <PrivacyPoolsRecovery
+                  deriveInput={{ signature }}
+                  chainId={
+                    typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                      ? 11155111
+                      : 1
+                  }
+                />
+              ) : recoveryMethod === 'backup' && rawKeys ? (
+                <PrivacyPoolsRecovery
+                  deriveInput={{ spendSecret: rawKeys.pSpend, viewSecret: rawKeys.pView }}
+                  chainId={
+                    typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                      ? 11155111
+                      : 1
+                  }
+                />
+              ) : null)}
           </div>
         )}
       </div>

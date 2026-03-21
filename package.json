@@ -18,7 +18,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "dependencies": {
-    "@cloakedxyz/clkd-privacy-pools": "0.1.1",
+    "@cloakedxyz/clkd-privacy-pools": "0.2.0",
     "@cloakedxyz/clkd-stealth": "1.0.4",
     "@noble/ciphers": "1.3.0",
     "@noble/hashes": "1.8.0",
