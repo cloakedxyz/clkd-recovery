@@ -30,8 +30,7 @@ interface Props {
 }
 
 const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
-/** Max deposit index to scan — covers heavy users */
-const MAX_INDEX_SCAN = 1000;
+
 const PP_UI_URL = 'https://app.privacypools.com';
 
 export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
@@ -42,6 +41,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
   const [showGuide, setShowGuide] = useState(false);
   const [customStartBlock, setCustomStartBlock] = useState('');
   const [customEndBlock, setCustomEndBlock] = useState('');
+  const [maxIndex, setMaxIndex] = useState('1000');
   const [scanProgress, setScanProgress] = useState('');
   const [scanPercent, setScanPercent] = useState(0);
 
@@ -108,9 +108,9 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       // The precommitment is deterministic: same wallet + same scope + same index = same precommitment.
       // Stop after 20 consecutive misses once we've found at least one deposit.
       const found: PoolDeposit[] = [];
-      let consecutiveMisses = 0;
+      const scanMaxIndex = Math.min(Math.max(parseInt(maxIndex) || 1000, 1), 10000);
 
-      for (let i = 0; i < MAX_INDEX_SCAN; i++) {
+      for (let i = 0; i < scanMaxIndex; i++) {
         const idx = BigInt(i);
         const secrets = deriveDepositSecrets(masterKeys, scope, idx);
         const precommitment = computePrecommitment(
@@ -126,10 +126,6 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             deposit,
             reviewStatus: 'scanning',
           });
-          consecutiveMisses = 0;
-        } else {
-          consecutiveMisses++;
-          if (consecutiveMisses >= 20 && found.length > 0) break;
         }
       }
 
@@ -156,7 +152,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
     } finally {
       setScanning(false);
     }
-  }, [signature, chainId, customStartBlock, customEndBlock]);
+  }, [signature, chainId, customStartBlock, customEndBlock, maxIndex]);
 
   const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
 
@@ -250,6 +246,18 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
               value={customEndBlock}
               onChange={(e) => setCustomEndBlock(e.target.value.replace(/\D/g, ''))}
               placeholder="Default: latest"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+            />
+          </div>
+          <div className="w-28">
+            <label className="text-xs text-text-muted block mb-1">
+              Max deposits
+            </label>
+            <input
+              type="text"
+              value={maxIndex}
+              onChange={(e) => setMaxIndex(e.target.value.replace(/\D/g, ''))}
+              placeholder="1000"
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
             />
           </div>
