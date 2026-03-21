@@ -71,12 +71,8 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       })) as bigint;
 
       const latestBlock = await client.getBlockNumber();
-      const startBlock = customStartBlock
-        ? BigInt(customStartBlock)
-        : config.startBlock;
-      const endBlock = customEndBlock
-        ? BigInt(customEndBlock)
-        : latestBlock;
+      const startBlock = customStartBlock ? BigInt(customStartBlock) : config.startBlock;
+      const endBlock = customEndBlock ? BigInt(customEndBlock) : latestBlock;
       const totalBlocks = endBlock - startBlock;
 
       setScanProgress(`Scanning ${totalBlocks.toLocaleString()} blocks...`);
@@ -113,10 +109,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       for (let i = 0; i < scanMaxIndex; i++) {
         const idx = BigInt(i);
         const secrets = deriveDepositSecrets(masterKeys, scope, idx);
-        const precommitment = computePrecommitment(
-          secrets.nullifier as any,
-          secrets.secret as any
-        );
+        const precommitment = computePrecommitment(secrets.nullifier as any, secrets.secret as any);
         const deposit = depositsByPrecommitment.get(precommitment);
 
         if (deposit) {
@@ -133,11 +126,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       setScanProgress('Checking ASP status...');
       for (const d of found) {
         try {
-          const status = await getDepositStatus(
-            config.aspApiBase,
-            chainId,
-            d.precommitment
-          );
+          const status = await getDepositStatus(config.aspApiBase, chainId, d.precommitment);
           d.reviewStatus = status?.reviewStatus ?? 'unknown';
         } catch (err) {
           console.warn(`Failed to check ASP status for deposit ${d.index}:`, err);
@@ -206,9 +195,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-text-primary">Privacy Pools</h3>
-            <p className="text-xs text-text-muted">
-              Scan for deposits in 0xbow Privacy Pools
-            </p>
+            <p className="text-xs text-text-muted">Scan for deposits in 0xbow Privacy Pools</p>
           </div>
         </div>
 
@@ -226,9 +213,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       {!scanning && (
         <div className="mb-4 flex gap-3">
           <div className="flex-1">
-            <label className="text-xs text-text-muted block mb-1">
-              Start block (optional)
-            </label>
+            <label className="text-xs text-text-muted block mb-1">Start block (optional)</label>
             <input
               type="text"
               value={customStartBlock}
@@ -238,9 +223,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             />
           </div>
           <div className="flex-1">
-            <label className="text-xs text-text-muted block mb-1">
-              End block (optional)
-            </label>
+            <label className="text-xs text-text-muted block mb-1">End block (optional)</label>
             <input
               type="text"
               value={customEndBlock}
@@ -249,9 +232,15 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
             />
           </div>
-          <div className="w-28">
-            <label className="text-xs text-text-muted block mb-1">
+          <div className="w-32">
+            <label className="text-xs text-text-muted mb-1 flex items-center gap-1">
               Max deposits
+              <span
+                title="How many deposit indices to check. Each deposit uses the next index (0, 1, 2, ...). Increase if you made more deposits than the default."
+                className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400 text-[10px] cursor-help"
+              >
+                i
+              </span>
             </label>
             <input
               type="text"
@@ -278,8 +267,8 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
           </div>
           {scanPercent === 0 && (
             <p className="text-xs text-text-muted mt-2">
-              This may take a few minutes depending on the block range.
-              Enter a start block above to speed things up.
+              This may take a few minutes depending on the block range. Enter a start block above to
+              speed things up.
             </p>
           )}
         </div>
@@ -346,9 +335,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
                         </span>
                       )}
                       {d.reviewStatus === 'declined' && (
-                        <span className="text-xs text-red-600 font-medium">
-                          Ragequit available
-                        </span>
+                        <span className="text-xs text-red-600 font-medium">Ragequit available</span>
                       )}
                       {d.reviewStatus === 'pending' && (
                         <span className="text-xs text-text-muted">Awaiting review</span>
@@ -404,17 +391,17 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             {showGuide && (
               <div className="px-4 pb-4 text-sm text-blue-800 space-y-3">
                 <p>
-                  Privacy Pool deposits are controlled by your wallet&apos;s private key.
-                  To withdraw, you need to use the wallet that made the deposit.
+                  Privacy Pool deposits are controlled by your wallet&apos;s private key. To
+                  withdraw, you need to use the wallet that made the deposit.
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-sm">
                   <li>
-                    Find the <strong>stealth address private key</strong> from the table above
-                    that was used to make the deposit.
+                    Find the <strong>stealth address private key</strong> from the table above that
+                    was used to make the deposit.
                   </li>
                   <li>
-                    Import that private key into a wallet (MetaMask, Rabby, or Rainbow).
-                    See the &quot;How to use your private key&quot; guide above for steps.
+                    Import that private key into a wallet (MetaMask, Rabby, or Rainbow). See the
+                    &quot;How to use your private key&quot; guide above for steps.
                   </li>
                   <li>
                     Go to{' '}
@@ -432,21 +419,21 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
                     Your deposits will appear in the Privacy Pools UI. From there you can:
                     <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
                       <li>
-                        <strong>Withdraw</strong> (approved deposits) &mdash; private
-                        withdrawal to any address
+                        <strong>Withdraw</strong> (approved deposits) &mdash; private withdrawal to
+                        any address
                       </li>
                       <li>
-                        <strong>Ragequit</strong> (declined deposits) &mdash; non-private
-                        withdrawal that returns your funds
+                        <strong>Ragequit</strong> (declined deposits) &mdash; non-private withdrawal
+                        that returns your funds
                       </li>
                     </ul>
                   </li>
                 </ol>
                 <div className="bg-blue-100/50 rounded-lg p-3 mt-3">
                   <p className="text-xs text-blue-700">
-                    <strong>Note:</strong> The Privacy Pools UI uses the same wallet address
-                    that made the deposit. Your deposit secrets are derived from the wallet
-                    signature, so the same wallet will automatically recover them.
+                    <strong>Note:</strong> The Privacy Pools UI uses the same wallet address that
+                    made the deposit. Your deposit secrets are derived from the wallet signature, so
+                    the same wallet will automatically recover them.
                   </p>
                 </div>
               </div>
@@ -455,11 +442,8 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
 
           <p className="mt-3 text-xs text-text-muted">
             Pool contract:{' '}
-            <span className="font-mono">
-              {getChainConfig(chainId).pools['ETH']?.address}
-            </span>
-            {' '}&middot;{' '}
-            {chainId === 1 ? 'Ethereum Mainnet' : 'Sepolia Testnet'}
+            <span className="font-mono">{getChainConfig(chainId).pools['ETH']?.address}</span>{' '}
+            &middot; {chainId === 1 ? 'Ethereum Mainnet' : 'Sepolia Testnet'}
           </p>
         </>
       )}
