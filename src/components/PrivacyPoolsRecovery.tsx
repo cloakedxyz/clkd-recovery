@@ -1,22 +1,16 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { createPublicClient, http, formatEther, encodeFunctionData, type Hex } from 'viem';
+import { createPublicClient, http, formatEther, type Hex } from 'viem';
 import { sepolia, mainnet } from 'viem/chains';
 import {
   deriveMnemonic,
   deriveMasterKeys,
   deriveDepositSecrets,
   computePrecommitment,
-  buildCommitment,
   getChainConfig,
   scanPoolEvents,
   getDepositStatus,
-  getAspLeaves,
-  getAspRoots,
-  createSdk,
-  generateCommitmentProof,
-  generateWithdrawalProof,
   POOL_ABI,
   type ReviewStatus,
   type DepositRecord,
@@ -27,7 +21,6 @@ interface PoolDeposit {
   precommitment: bigint;
   deposit: DepositRecord;
   reviewStatus: ReviewStatus | 'unknown' | 'scanning';
-  withdrawn: boolean;
 }
 
 interface Props {
@@ -37,15 +30,14 @@ interface Props {
 
 const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
 const MAX_INDEX_SCAN = 50;
+const PP_UI_URL = 'https://app.privacypools.com';
 
 export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [deposits, setDeposits] = useState<PoolDeposit[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [actionInProgress, setActionInProgress] = useState<number | null>(null);
-  const [actionStatus, setActionStatus] = useState<string>('');
-  const [txHash, setTxHash] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const scanForDeposits = useCallback(async () => {
     setScanning(true);
@@ -59,11 +51,9 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
 
-      // Derive mnemonic from wallet signature
       const mnemonic = await deriveMnemonic(signature);
       const masterKeys = deriveMasterKeys(mnemonic);
 
-      // Read pool scope
       const scopeRes = await client.readContract({
         address: poolConfig.address as `0x${string}`,
         abi: POOL_ABI,
@@ -71,7 +61,6 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       });
       const scope = scopeRes as bigint;
 
-      // Scan chain for all pool events
       const currentBlock = await client.getBlockNumber();
       const { depositsByPrecommitment } = await scanPoolEvents(
         client as any,
@@ -80,7 +69,6 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
         currentBlock
       );
 
-      // Iterate through indices to find user's deposits
       const found: PoolDeposit[] = [];
       let consecutiveMisses = 0;
 
@@ -99,7 +87,6 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             precommitment,
             deposit,
             reviewStatus: 'scanning',
-            withdrawn: false,
           });
           consecutiveMisses = 0;
         } else {
@@ -131,156 +118,9 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
     }
   }, [signature, chainId]);
 
-  const handleWithdraw = useCallback(
-    async (poolDeposit: PoolDeposit) => {
-      setActionInProgress(poolDeposit.index);
-      setActionStatus('Generating withdrawal proof...');
-      setTxHash(null);
-      setError(null);
+  const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
 
-      try {
-        const config = getChainConfig(chainId);
-        const poolConfig = config.pools['ETH']!;
-
-        const mnemonic = await deriveMnemonic(signature);
-        const masterKeys = deriveMasterKeys(mnemonic);
-
-        const client = createPublicClient({
-          chain: CHAIN_MAP[chainId],
-          transport: http(),
-        });
-
-        const scopeRes = await client.readContract({
-          address: poolConfig.address as `0x${string}`,
-          abi: POOL_ABI,
-          functionName: 'SCOPE',
-        });
-        const scope = scopeRes as bigint;
-
-        const secrets = deriveDepositSecrets(masterKeys, scope, BigInt(poolDeposit.index));
-
-        // Get state tree leaves
-        setActionStatus('Indexing state tree...');
-        const currentBlock = await client.getBlockNumber();
-        const { leaves: stateLeaves } = await scanPoolEvents(
-          client as any,
-          poolConfig.address as `0x${string}`,
-          config.startBlock,
-          currentBlock
-        );
-
-        // Get ASP leaves
-        setActionStatus('Fetching ASP data...');
-        const aspLeavesData = await getAspLeaves(config.aspApiBase, chainId, scope);
-
-        setActionStatus('Generating ZK proof (this may take a moment)...');
-
-        const sdk = createSdk(
-          'https://unpkg.com/@0xbow/privacy-pools-core-sdk@1.0.2/dist/node/',
-          true
-        );
-
-        // We need the user to sign a transaction, but in recovery mode
-        // we can only show them the calldata. Generate proof and show instructions.
-        const { proof } = await generateWithdrawalProof(sdk, {
-          masterKeys,
-          value: poolDeposit.deposit.value,
-          label: poolDeposit.deposit.label,
-          nullifier: secrets.nullifier as any,
-          secret: secrets.secret as any,
-          scope,
-          stateLeaves,
-          aspLeaves: aspLeavesData.aspLeaves,
-          recipient: '0x0000000000000000000000000000000000000000', // placeholder — user needs to provide
-        });
-
-        setActionStatus(
-          'Proof generated! In recovery mode, you will need to submit this transaction manually. ' +
-            'Copy the proof data and use it with a wallet or cast to call withdraw() on the pool contract.'
-        );
-
-        // For now, show the proof was generated successfully
-        // Full withdrawal requires the user to sign a tx which needs wallet integration
-        console.log('Withdrawal proof generated:', proof);
-      } catch (err) {
-        setError(
-          `Withdrawal failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      } finally {
-        setActionInProgress(null);
-      }
-    },
-    [signature, chainId]
-  );
-
-  const handleRagequit = useCallback(
-    async (poolDeposit: PoolDeposit) => {
-      setActionInProgress(poolDeposit.index);
-      setActionStatus('Generating ragequit proof...');
-      setTxHash(null);
-      setError(null);
-
-      try {
-        const config = getChainConfig(chainId);
-        const poolConfig = config.pools['ETH']!;
-
-        const mnemonic = await deriveMnemonic(signature);
-        const masterKeys = deriveMasterKeys(mnemonic);
-
-        const client = createPublicClient({
-          chain: CHAIN_MAP[chainId],
-          transport: http(),
-        });
-
-        const scopeRes = await client.readContract({
-          address: poolConfig.address as `0x${string}`,
-          abi: POOL_ABI,
-          functionName: 'SCOPE',
-        });
-        const scope = scopeRes as bigint;
-
-        const secrets = deriveDepositSecrets(masterKeys, scope, BigInt(poolDeposit.index));
-
-        setActionStatus('Generating commitment proof...');
-
-        const sdk = createSdk(
-          'https://unpkg.com/@0xbow/privacy-pools-core-sdk@1.0.2/dist/node/',
-          true
-        );
-
-        const { proof } = await generateCommitmentProof(
-          sdk,
-          poolDeposit.deposit.value,
-          poolDeposit.deposit.label,
-          secrets.nullifier as any,
-          secrets.secret as any
-        );
-
-        // Build the ragequit calldata
-        const ragequitData = encodeFunctionData({
-          abi: POOL_ABI,
-          functionName: 'ragequit',
-          args: [proof as any],
-        });
-
-        setActionStatus('Proof generated! Copy the calldata below to submit via your wallet.');
-
-        // Store the calldata for the user to copy
-        setTxHash(ragequitData);
-        console.log('Ragequit calldata:', ragequitData);
-        console.log('Send to pool contract:', poolConfig.address);
-      } catch (err) {
-        setError(
-          `Ragequit failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      } finally {
-        setActionInProgress(null);
-      }
-    },
-    [signature, chainId]
-  );
-
-  const statusLabel = (status: ReviewStatus | 'unknown' | 'scanning') => {
+  const statusBadge = (status: ReviewStatus | 'unknown' | 'scanning') => {
     switch (status) {
       case 'approved':
         return (
@@ -304,13 +144,9 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
           </span>
         );
       case 'scanning':
-        return (
-          <span className="text-xs text-text-muted">Checking...</span>
-        );
+        return <span className="text-xs text-text-muted">Checking...</span>;
       default:
-        return (
-          <span className="text-xs text-text-muted">Unknown</span>
-        );
+        return <span className="text-xs text-text-muted">Unknown</span>;
     }
   };
 
@@ -333,55 +169,41 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             </svg>
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-text-primary">
-              Privacy Pools
-            </h3>
+            <h3 className="text-sm font-semibold text-text-primary">Privacy Pools</h3>
             <p className="text-xs text-text-muted">
               Scan for deposits in 0xbow Privacy Pools
             </p>
           </div>
         </div>
 
-        {!scanned && (
-          <button
-            onClick={scanForDeposits}
-            disabled={scanning}
-            className="text-sm bg-primary hover:bg-primary-light text-white font-medium px-4 py-2 rounded-lg shadow-button transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            {scanning && (
-              <svg
-                className="animate-spin h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
-              </svg>
-            )}
-            {scanning ? 'Scanning...' : 'Scan for Deposits'}
-          </button>
-        )}
-
-        {scanned && (
-          <button
-            onClick={scanForDeposits}
-            disabled={scanning}
-            className="text-sm text-primary hover:text-primary-light font-medium px-3 py-1.5 rounded-md border border-primary/30 hover:border-primary transition-colors disabled:opacity-50"
-          >
-            Rescan
-          </button>
-        )}
+        <button
+          onClick={scanForDeposits}
+          disabled={scanning}
+          className={`text-sm font-medium px-4 py-2 rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 ${
+            scanned
+              ? 'text-primary hover:text-primary-light border border-primary/30 hover:border-primary'
+              : 'bg-primary hover:bg-primary-light text-white shadow-button'
+          }`}
+        >
+          {scanning && (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+          )}
+          {scanning ? 'Scanning...' : scanned ? 'Rescan' : 'Scan for Deposits'}
+        </button>
       </div>
 
       {error && (
@@ -400,107 +222,167 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
       )}
 
       {deposits.length > 0 && (
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-card-raised border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-text-muted font-medium w-16">
-                  #
-                </th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium">
-                  Value
-                </th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium">
-                  Status
-                </th>
-                <th className="text-right px-4 py-3 text-text-muted font-medium">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {deposits.map((d) => (
-                <tr
-                  key={d.index}
-                  className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
-                >
-                  <td className="px-4 py-3 text-text-muted font-mono">
-                    {d.index}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-text-primary">
-                    {formatEther(d.deposit.value)} ETH
-                  </td>
-                  <td className="px-4 py-3">{statusLabel(d.reviewStatus)}</td>
-                  <td className="px-4 py-3 text-right">
-                    {d.reviewStatus === 'approved' && (
-                      <button
-                        onClick={() => handleWithdraw(d)}
-                        disabled={actionInProgress !== null}
-                        className="text-xs bg-primary hover:bg-primary-light text-white font-medium px-3 py-1.5 rounded-md transition-all disabled:opacity-50"
-                      >
-                        {actionInProgress === d.index
-                          ? 'Working...'
-                          : 'Withdraw'}
-                      </button>
-                    )}
-                    {d.reviewStatus === 'declined' && (
-                      <button
-                        onClick={() => handleRagequit(d)}
-                        disabled={actionInProgress !== null}
-                        className="text-xs bg-red-500 hover:bg-red-600 text-white font-medium px-3 py-1.5 rounded-md transition-all disabled:opacity-50"
-                      >
-                        {actionInProgress === d.index
-                          ? 'Working...'
-                          : 'Ragequit'}
-                      </button>
-                    )}
-                    {d.reviewStatus === 'pending' && (
-                      <span className="text-xs text-text-muted">
-                        Awaiting review
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {actionStatus && (
-        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <p className="text-blue-700 text-sm">{actionStatus}</p>
-        </div>
-      )}
-
-      {txHash && (
-        <div className="mt-3">
-          <p className="text-xs text-text-muted mb-1">
-            Transaction calldata (send to pool contract):
-          </p>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-24 overflow-y-auto">
-            <code className="text-xs text-text-primary break-all font-mono">
-              {txHash}
-            </code>
+        <>
+          {/* Summary */}
+          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  {deposits.length} deposit{deposits.length !== 1 ? 's' : ''} found
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Total value in pool: {formatEther(totalValue)} ETH
+                </p>
+              </div>
+              <p className="text-lg font-bold text-primary">{formatEther(totalValue)} ETH</p>
+            </div>
           </div>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(txHash);
-            }}
-            className="mt-2 text-xs text-primary hover:text-primary-light font-medium"
-          >
-            Copy calldata
-          </button>
-        </div>
-      )}
 
-      {scanned && deposits.length > 0 && (
-        <p className="mt-4 text-xs text-text-muted">
-          Pool contract:{' '}
-          <span className="font-mono">
-            {getChainConfig(chainId).pools['ETH']?.address}
-          </span>
-        </p>
+          {/* Deposits table */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-card-raised border-b border-gray-200">
+                  <th className="text-left px-4 py-3 text-text-muted font-medium w-16">#</th>
+                  <th className="text-left px-4 py-3 text-text-muted font-medium">Value</th>
+                  <th className="text-left px-4 py-3 text-text-muted font-medium">Status</th>
+                  <th className="text-left px-4 py-3 text-text-muted font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deposits.map((d) => (
+                  <tr
+                    key={d.index}
+                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-4 py-3 text-text-muted font-mono">{d.index}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary">
+                      {formatEther(d.deposit.value)} ETH
+                    </td>
+                    <td className="px-4 py-3">{statusBadge(d.reviewStatus)}</td>
+                    <td className="px-4 py-3">
+                      {d.reviewStatus === 'approved' && (
+                        <span className="text-xs text-green-600 font-medium">
+                          Ready to withdraw
+                        </span>
+                      )}
+                      {d.reviewStatus === 'declined' && (
+                        <span className="text-xs text-red-600 font-medium">
+                          Ragequit available
+                        </span>
+                      )}
+                      {d.reviewStatus === 'pending' && (
+                        <span className="text-xs text-text-muted">Awaiting review</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Recovery instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowGuide(!showGuide)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-blue-100/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#2563EB"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+                <p className="text-sm font-medium text-blue-800">
+                  How to withdraw your Privacy Pool deposits
+                </p>
+              </div>
+              <svg
+                className={`w-4 h-4 text-blue-600 transition-transform ${showGuide ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            {showGuide && (
+              <div className="px-4 pb-4 text-sm text-blue-800 space-y-3">
+                <p>
+                  Privacy Pool deposits are controlled by your wallet&apos;s private key.
+                  To withdraw, you need to use the wallet that made the deposit.
+                </p>
+                <ol className="list-decimal list-inside space-y-2 text-sm">
+                  <li>
+                    Find the <strong>stealth address private key</strong> from the table above
+                    that was used to make the deposit.
+                  </li>
+                  <li>
+                    Import that private key into a wallet (MetaMask, Rabby, or Rainbow).
+                    See the &quot;How to use your private key&quot; guide above for steps.
+                  </li>
+                  <li>
+                    Go to{' '}
+                    <a
+                      href={PP_UI_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline hover:text-blue-800 font-medium"
+                    >
+                      app.privacypools.com
+                    </a>{' '}
+                    and connect the wallet with the imported key.
+                  </li>
+                  <li>
+                    Your deposits will appear in the Privacy Pools UI. From there you can:
+                    <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                      <li>
+                        <strong>Withdraw</strong> (approved deposits) &mdash; private
+                        withdrawal to any address
+                      </li>
+                      <li>
+                        <strong>Ragequit</strong> (declined deposits) &mdash; non-private
+                        withdrawal that returns your funds
+                      </li>
+                    </ul>
+                  </li>
+                </ol>
+                <div className="bg-blue-100/50 rounded-lg p-3 mt-3">
+                  <p className="text-xs text-blue-700">
+                    <strong>Note:</strong> The Privacy Pools UI uses the same wallet address
+                    that made the deposit. Your deposit secrets are derived from the wallet
+                    signature, so the same wallet will automatically recover them.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p className="mt-3 text-xs text-text-muted">
+            Pool contract:{' '}
+            <span className="font-mono">
+              {getChainConfig(chainId).pools['ETH']?.address}
+            </span>
+            {' '}&middot;{' '}
+            {chainId === 1 ? 'Ethereum Mainnet' : 'Sepolia Testnet'}
+          </p>
+        </>
       )}
     </div>
   );
