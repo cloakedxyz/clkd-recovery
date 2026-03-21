@@ -193,9 +193,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
             </svg>
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-text-primary">
-              Privacy Pools {chainId === 1 ? '(Ethereum)' : '(Sepolia)'}
-            </h3>
+            <h3 className="text-sm font-semibold text-text-primary">Privacy Pools</h3>
             <p className="text-xs text-text-muted">Scan for deposits in 0xbow Privacy Pools</p>
           </div>
         </div>
