@@ -140,7 +140,7 @@ export function PrivacyPoolsRecovery({ signature, chainId }: Props) {
     } finally {
       setScanning(false);
     }
-  }, [signature, chainId]);
+  }, [signature, chainId, customStartBlock]);
 
   const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
 
