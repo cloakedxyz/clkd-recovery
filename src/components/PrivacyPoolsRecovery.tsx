@@ -63,6 +63,8 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId }: Props) {
 
       // Derive PP mnemonic from wallet signature or PRF secrets
       const mnemonic = await deriveMnemonic(deriveInput);
+      console.log('[PP-DEBUG] deriveInput:', deriveInput);
+      console.log('[PP-DEBUG] derived mnemonic:', mnemonic);
       const masterKeys = deriveMasterKeys(mnemonic);
 
       // Read pool scope
@@ -71,6 +73,8 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId }: Props) {
         abi: POOL_ABI,
         functionName: 'SCOPE',
       })) as bigint;
+      console.log('[PP-DEBUG] scope from contract:', scope.toString());
+      console.log('[PP-DEBUG] pool address:', poolConfig.address);
 
       const latestBlock = await client.getBlockNumber();
       const startBlock = customStartBlock ? BigInt(customStartBlock) : config.startBlock;
@@ -111,6 +115,10 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId }: Props) {
         const idx = BigInt(i);
         const secrets = deriveDepositSecrets(masterKeys, scope, idx);
         const precommitment = computePrecommitment(secrets.nullifier as any, secrets.secret as any);
+        // DEBUG: log first 5 precommitments for comparison with mini-app — REMOVE
+        if (i < 5) {
+          console.log(`[PP-DEBUG] index=${i} precommitment=${precommitment.toString()} nullifier=${(secrets.nullifier as any).toString()} secret=${(secrets.secret as any).toString()}`);
+        }
         const deposit = depositsByPrecommitment.get(precommitment);
 
         if (deposit) {
