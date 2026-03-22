@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cloakedxyz/clkd-privacy-pools':
-        specifier: 0.2.1
-        version: 0.2.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+        specifier: ^0.3.0
+        version: 0.3.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       '@cloakedxyz/clkd-stealth':
         specifier: 1.0.4
         version: 1.0.4(@types/node@20.19.31)(bufferutil@4.1.0)(utf-8-validate@5.0.10)(zod@3.25.76)
@@ -98,8 +98,8 @@ packages:
   '@base-org/account@2.4.0':
     resolution: {integrity: sha512-A4Umpi8B9/pqR78D1Yoze4xHyQaujioVRqqO3d6xuDFw9VRtjg6tK3bPlwE0aW+nVH/ntllCpPa2PbI8Rnjcug==}
 
-  '@cloakedxyz/clkd-privacy-pools@0.2.1':
-    resolution: {integrity: sha512-T+NyBX3/L2IG5b4XIdV0mF0juQnzIprBtCszluft6AFu0xE2YkWwPpSuBEyG2yUlaTlGeT2K6KsRdKozn1ofbQ==}
+  '@cloakedxyz/clkd-privacy-pools@0.3.0':
+    resolution: {integrity: sha512-HwNH0eH7YOsBKpXLfc/pBDReMRGr/D6U4HgIaNDJyIFhozqZ/HDtW4BTNv108nF3h31Ch91MLTuB4XXkd8IrVA==}
 
   '@cloakedxyz/clkd-stealth@1.0.4':
     resolution: {integrity: sha512-iYR6YhQnEvzkLjG6tzt6eb/Y6AhmbsoxHiwei7iATB0DMwPNr4vNa5QqH2PMD1N6WqQVMelR74TvOF+/S+qH1w==}
@@ -4117,7 +4117,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@cloakedxyz/clkd-privacy-pools@0.2.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
+  '@cloakedxyz/clkd-privacy-pools@0.3.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
     dependencies:
       '@0xbow/privacy-pools-core-sdk': 1.2.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)(zod@3.25.76)
       viem: 2.45.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
