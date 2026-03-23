@@ -44,8 +44,11 @@ const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
 
 const PP_UI_URL = 'https://privacypools.com';
 
-function CopyButton({ value, label, copied, onCopy }: {
-  value: string;
+function CopyButton({
+  label,
+  copied,
+  onCopy,
+}: {
   label: string;
   copied: boolean;
   onCopy: () => void;
@@ -58,7 +61,12 @@ function CopyButton({ value, label, copied, onCopy }: {
       title={label}
     >
       {copied ? (
-        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg
+          className="w-4 h-4 text-green-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       ) : (
@@ -122,16 +130,14 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
   return (
     <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
       <td className="px-4 py-3 text-text-muted font-mono">{d.index}</td>
-      <td className="px-4 py-3 font-mono text-text-primary">
-        {formatEther(d.deposit.value)} ETH
-      </td>
+      <td className="px-4 py-3 font-mono text-text-primary">{formatEther(d.deposit.value)} ETH</td>
       <td className="px-4 py-3">
         {d.depositor ? (
           <div className="flex items-center gap-2">
             <span className="font-mono text-text-primary text-xs">
               {d.depositor.slice(0, 10)}...{d.depositor.slice(-8)}
             </span>
-            <CopyButton value={d.depositor} label="Copy address" copied={copiedAddr} onCopy={handleCopyAddr} />
+            <CopyButton label="Copy address" copied={copiedAddr} onCopy={handleCopyAddr} />
           </div>
         ) : (
           <span className="text-xs text-text-muted">-</span>
@@ -143,10 +149,13 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
             <span className="font-mono text-text-primary text-xs tracking-wider">
               ••••••••••••••••••••
             </span>
-            <CopyButton value={d.privateKey} label="Copy private key" copied={copiedKey} onCopy={handleCopyKey} />
+            <CopyButton label="Copy private key" copied={copiedKey} onCopy={handleCopyKey} />
           </div>
         ) : d.depositor ? (
-          <span className="text-xs text-yellow-600" title="Try 'Derive More' in the stealth addresses section above">
+          <span
+            className="text-xs text-yellow-600"
+            title="Try 'Derive More' in the stealth addresses section above"
+          >
             Not found
           </span>
         ) : (
@@ -261,10 +270,11 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
           'event Deposited(address indexed _depositor, uint256 _commitment, uint256 _label, uint256 _value, uint256 _precommitmentHash)'
         );
         const foundPrecommitments = new Set(found.map((d) => d.precommitment));
-        const chunkSize = 1000n;
+        const chunkSize = BigInt(1000);
 
         for (let start = startBlock; start <= endBlock; start += chunkSize) {
-          const end = start + chunkSize - 1n > endBlock ? endBlock : start + chunkSize - 1n;
+          const end =
+            start + chunkSize - BigInt(1) > endBlock ? endBlock : start + chunkSize - BigInt(1);
           const logs = await client.getLogs({
             address: poolConfig.address as `0x${string}`,
             event: depositedEvent,
