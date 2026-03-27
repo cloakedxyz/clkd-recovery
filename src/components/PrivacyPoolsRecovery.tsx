@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { createPublicClient, http, formatEther, type Hex, parseAbiItem } from 'viem';
+import { createPublicClient, http, fallback, formatEther, type Hex, parseAbiItem } from 'viem';
 import { sepolia, mainnet } from 'viem/chains';
 import {
   deriveMnemonic,
@@ -41,6 +41,15 @@ interface Props {
 }
 
 const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
+
+const MAINNET_RPCS = [
+  'https://eth.drpc.org',
+  'https://ethereum-json-rpc.stakely.io',
+  'https://eth.api.pocket.network',
+  'https://ethereum-rpc.publicnode.com',
+  'https://rpc.flashbots.net',
+  'https://eth.llamarpc.com',
+];
 
 const PP_UI_URL = 'https://privacypools.com';
 
@@ -189,7 +198,11 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     try {
       const config = getChainConfig(chainId);
       const chain = CHAIN_MAP[chainId];
-      const client = createPublicClient({ chain, transport: http() });
+      const transport =
+        chainId === 1
+          ? fallback(MAINNET_RPCS.map((url) => http(url)))
+          : http();
+      const client = createPublicClient({ chain, transport });
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
 
