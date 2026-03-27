@@ -530,10 +530,14 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                   )}
                 </p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  Recoverable: {formatEther(activeValue)} ETH
+                  Up to {formatEther(activeValue)} ETH may be recoverable
                   {activeValue !== totalValue && (
                     <span> (total deposited: {formatEther(totalValue)} ETH)</span>
                   )}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Deposits withdrawn via ZK proof are private and cannot be detected here.
+                  Some &quot;Approved&quot; deposits may have already been withdrawn.
                 </p>
               </div>
               <p className="text-lg font-bold text-primary">{formatEther(activeValue)} ETH</p>
