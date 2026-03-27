@@ -138,7 +138,9 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
   };
 
   return (
-    <tr className={`border-b border-gray-100 last:border-0 transition-colors ${d.spent ? 'opacity-50' : 'hover:bg-gray-50'}`}>
+    <tr
+      className={`border-b border-gray-100 last:border-0 transition-colors ${d.spent ? 'opacity-50' : 'hover:bg-gray-50'}`}
+    >
       <td className="px-4 py-3 text-text-muted font-mono">{d.index}</td>
       <td className="px-4 py-3 font-mono text-text-primary">{formatEther(d.deposit.value)} ETH</td>
       <td className="px-4 py-3">
@@ -178,7 +180,9 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
             <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
             Exited
           </span>
-        ) : statusBadge(d.reviewStatus)}
+        ) : (
+          statusBadge(d.reviewStatus)
+        )}
       </td>
     </tr>
   );
@@ -209,10 +213,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     try {
       const config = getChainConfig(chainId);
       const chain = CHAIN_MAP[chainId];
-      const transport =
-        chainId === 1
-          ? fallback(MAINNET_RPCS.map((url) => http(url)))
-          : http();
+      const transport = chainId === 1 ? fallback(MAINNET_RPCS.map((url) => http(url))) : http();
       const client = createPublicClient({ chain, transport });
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
@@ -350,7 +351,10 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
         const exitedAddresses = new Set<string>();
         const exitChunkSize = BigInt(5000);
         for (let start = startBlock; start <= endBlock; start += exitChunkSize) {
-          const end = start + exitChunkSize - BigInt(1) > endBlock ? endBlock : start + exitChunkSize - BigInt(1);
+          const end =
+            start + exitChunkSize - BigInt(1) > endBlock
+              ? endBlock
+              : start + exitChunkSize - BigInt(1);
           const [ragequitLogs, withdrawnLogs] = await Promise.all([
             client.getLogs({
               address: poolConfig.address as `0x${string}`,
@@ -394,7 +398,10 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     }
   }, [deriveInput, chainId, customStartBlock, customEndBlock, maxIndex, stealthKeys]);
 
-  const activeValue = deposits.reduce((sum, d) => d.spent ? sum : sum + d.deposit.value, BigInt(0));
+  const activeValue = deposits.reduce(
+    (sum, d) => (d.spent ? sum : sum + d.deposit.value),
+    BigInt(0)
+  );
   const activeCount = deposits.filter((d) => !d.spent).length;
 
   return (
@@ -524,12 +531,14 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                   {deposits.length} deposit{deposits.length !== 1 ? 's' : ''} found
                   {deposits.length !== activeCount && (
                     <span className="text-text-muted font-normal">
-                      {' '}({activeCount} approved, {deposits.length - activeCount} exited)
+                      {' '}
+                      ({activeCount} approved, {deposits.length - activeCount} exited)
                     </span>
                   )}
                 </p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  Up to {formatEther(activeValue)} ETH recoverable. Some approved deposits may already have been withdrawn.
+                  Up to {formatEther(activeValue)} ETH recoverable. Some approved deposits may
+                  already have been withdrawn.
                 </p>
               </div>
               <p className="text-lg font-bold text-primary">{formatEther(activeValue)} ETH</p>
@@ -574,9 +583,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                   </svg>
-                  <p className="text-sm font-semibold text-amber-900">
-                    Privacy Pools Seed Phrase
-                  </p>
+                  <p className="text-sm font-semibold text-amber-900">Privacy Pools Seed Phrase</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -597,14 +604,29 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                   >
                     {mnemonicCopied ? (
                       <>
-                        <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <svg
+                          className="w-3.5 h-3.5 text-green-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
                         </svg>
                         Copied
                       </>
                     ) : (
                       <>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
                           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
@@ -616,24 +638,37 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
               </div>
               <div className="flex flex-col items-center gap-2">
                 <div className="grid grid-cols-6 gap-2 w-full">
-                  {mnemonic.split(' ').slice(0, 6).map((word, i) => (
-                    <div key={i} className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm">
-                      <span className="text-amber-400 text-xs mr-1">{i + 1}</span>
-                      {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
-                    </div>
-                  ))}
+                  {mnemonic
+                    .split(' ')
+                    .slice(0, 6)
+                    .map((word, i) => (
+                      <div
+                        key={i}
+                        className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm"
+                      >
+                        <span className="text-amber-400 text-xs mr-1">{i + 1}</span>
+                        {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
+                      </div>
+                    ))}
                 </div>
                 <div className="grid grid-cols-6 gap-2 w-full">
-                  {mnemonic.split(' ').slice(6, 12).map((word, i) => (
-                    <div key={i + 6} className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm">
-                      <span className="text-amber-400 text-xs mr-1">{i + 7}</span>
-                      {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
-                    </div>
-                  ))}
+                  {mnemonic
+                    .split(' ')
+                    .slice(6, 12)
+                    .map((word, i) => (
+                      <div
+                        key={i + 6}
+                        className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm"
+                      >
+                        <span className="text-amber-400 text-xs mr-1">{i + 7}</span>
+                        {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
+                      </div>
+                    ))}
                 </div>
               </div>
               <p className="text-xs text-amber-700 mt-2">
-                This is your Privacy Pools wallet seed phrase. Keep it safe and never share it publicly.
+                This is your Privacy Pools wallet seed phrase. Keep it safe and never share it
+                publicly.
               </p>
             </div>
           )}
@@ -682,13 +717,14 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             {showGuide && (
               <div className="px-4 pb-4 text-sm text-blue-800 space-y-3">
                 <p>
-                  Your Privacy Pools deposits are controlled by the seed phrase above. Approved deposits
-                  can be privately withdrawn using just the seed phrase. To ragequit a pending or declined
-                  deposit, you also need the depositor&apos;s private key.
+                  Your Privacy Pools deposits are controlled by the seed phrase above. Approved
+                  deposits can be privately withdrawn using just the seed phrase. To ragequit a
+                  pending or declined deposit, you also need the depositor&apos;s private key.
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-sm">
                   <li>
-                    <strong>Import your seed phrase</strong> &mdash; Copy the seed phrase above and import it at{' '}
+                    <strong>Import your seed phrase</strong> &mdash; Copy the seed phrase above and
+                    import it at{' '}
                     <a
                       href={`${PP_UI_URL}/account/load`}
                       target="_blank"
@@ -700,20 +736,22 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                     . Your deposits will appear on your dashboard.
                   </li>
                   <li>
-                    <strong>Withdraw approved deposits</strong> &mdash; Approved deposits can be privately
-                    withdrawn via a relayer directly from the Privacy Pools dashboard. No depositor key needed.
+                    <strong>Withdraw approved deposits</strong> &mdash; Approved deposits can be
+                    privately withdrawn via a relayer directly from the Privacy Pools dashboard. No
+                    depositor key needed.
                   </li>
                   <li>
-                    <strong>Ragequit pending/declined deposits</strong> &mdash; Copy the depositor&apos;s private
-                    key from the table above and import it into your wallet (MetaMask, Rabby, or Rainbow).
-                    Fund the address with ETH for gas, then initiate a ragequit from the dashboard.
+                    <strong>Ragequit pending/declined deposits</strong> &mdash; Copy the
+                    depositor&apos;s private key from the table above and import it into your wallet
+                    (MetaMask, Rabby, or Rainbow). Fund the address with ETH for gas, then initiate
+                    a ragequit from the dashboard.
                   </li>
                 </ol>
                 <div className="bg-blue-100 border border-blue-300 rounded-md p-3 mt-2">
                   <p className="text-xs text-blue-900">
-                    <strong>Important:</strong> Only the original depositor address can ragequit a deposit.
-                    If you connect a different wallet, you will see the error: &quot;Only the original
-                    depositor can ragequit from this commitment.&quot;
+                    <strong>Important:</strong> Only the original depositor address can ragequit a
+                    deposit. If you connect a different wallet, you will see the error: &quot;Only
+                    the original depositor can ragequit from this commitment.&quot;
                   </p>
                 </div>
               </div>
