@@ -394,7 +394,6 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     }
   }, [deriveInput, chainId, customStartBlock, customEndBlock, maxIndex, stealthKeys]);
 
-  const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
   const activeValue = deposits.reduce((sum, d) => d.spent ? sum : sum + d.deposit.value, BigInt(0));
   const activeCount = deposits.filter((d) => !d.spent).length;
 
@@ -525,19 +524,12 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                   {deposits.length} deposit{deposits.length !== 1 ? 's' : ''} found
                   {deposits.length !== activeCount && (
                     <span className="text-text-muted font-normal">
-                      {' '}({activeCount} active, {deposits.length - activeCount} exited)
+                      {' '}({activeCount} approved, {deposits.length - activeCount} exited)
                     </span>
                   )}
                 </p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  Up to {formatEther(activeValue)} ETH may be recoverable
-                  {activeValue !== totalValue && (
-                    <span> (total deposited: {formatEther(totalValue)} ETH)</span>
-                  )}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">
-                  Deposits withdrawn via ZK proof are private and cannot be detected here.
-                  Some &quot;Approved&quot; deposits may have already been withdrawn.
+                  Up to {formatEther(activeValue)} ETH recoverable. Some approved deposits may already have been withdrawn.
                 </p>
               </div>
               <p className="text-lg font-bold text-primary">{formatEther(activeValue)} ETH</p>
@@ -690,8 +682,9 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             {showGuide && (
               <div className="px-4 pb-4 text-sm text-blue-800 space-y-3">
                 <p>
-                  Your Privacy Pools deposits are controlled by the seed phrase above. To withdraw or
-                  ragequit, you need to import both the seed phrase and the depositor&apos;s private key.
+                  Your Privacy Pools deposits are controlled by the seed phrase above. Approved deposits
+                  can be privately withdrawn using just the seed phrase. To ragequit a pending or declined
+                  deposit, you also need the depositor&apos;s private key.
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-sm">
                   <li>
@@ -707,18 +700,13 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                     . Your deposits will appear on your dashboard.
                   </li>
                   <li>
-                    <strong>Import the depositor private key</strong> &mdash; Copy the private key from
-                    the table above for the deposit you want to recover. Import it into your wallet
-                    (MetaMask, Rabby, or Rainbow).
+                    <strong>Withdraw approved deposits</strong> &mdash; Approved deposits can be privately
+                    withdrawn via a relayer directly from the Privacy Pools dashboard. No depositor key needed.
                   </li>
                   <li>
-                    <strong>Fund the depositor address with ETH</strong> &mdash; The ragequit transaction
-                    must be sent from the original depositor address, so it needs ETH for gas.
-                  </li>
-                  <li>
-                    <strong>Recover your funds</strong> &mdash; On the Privacy Pools dashboard, find your
-                    pending or declined deposit and initiate a ragequit. Make sure your wallet is connected
-                    with the depositor address.
+                    <strong>Ragequit pending/declined deposits</strong> &mdash; Copy the depositor&apos;s private
+                    key from the table above and import it into your wallet (MetaMask, Rabby, or Rainbow).
+                    Fund the address with ETH for gas, then initiate a ragequit from the dashboard.
                   </li>
                 </ol>
                 <div className="bg-blue-100 border border-blue-300 rounded-md p-3 mt-2">
