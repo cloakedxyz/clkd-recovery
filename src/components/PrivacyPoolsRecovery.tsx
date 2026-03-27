@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { createPublicClient, http, formatEther, type Hex, parseAbiItem } from 'viem';
+import { createPublicClient, http, fallback, formatEther, type Hex, parseAbiItem } from 'viem';
 import { sepolia, mainnet } from 'viem/chains';
 import {
   deriveMnemonic,
@@ -23,6 +23,7 @@ interface PoolDeposit {
   depositor?: string;
   privateKey?: string;
   reviewStatus: ReviewStatus | 'unknown' | 'scanning';
+  spent: boolean;
 }
 
 type DeriveInput = { signature: Hex } | { spendSecret: Hex; viewSecret: Hex };
@@ -41,6 +42,15 @@ interface Props {
 }
 
 const CHAIN_MAP = { 1: mainnet, 11155111: sepolia } as const;
+
+const MAINNET_RPCS = [
+  'https://eth.drpc.org',
+  'https://ethereum-json-rpc.stakely.io',
+  'https://eth.api.pocket.network',
+  'https://ethereum-rpc.publicnode.com',
+  'https://rpc.flashbots.net',
+  'https://eth.llamarpc.com',
+];
 
 const PP_UI_URL = 'https://privacypools.com';
 
@@ -128,7 +138,9 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
   };
 
   return (
-    <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+    <tr
+      className={`border-b border-gray-100 last:border-0 transition-colors ${d.spent ? 'opacity-50' : 'hover:bg-gray-50'}`}
+    >
       <td className="px-4 py-3 text-text-muted font-mono">{d.index}</td>
       <td className="px-4 py-3 font-mono text-text-primary">{formatEther(d.deposit.value)} ETH</td>
       <td className="px-4 py-3">
@@ -162,7 +174,16 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
           <span className="text-xs text-text-muted">-</span>
         )}
       </td>
-      <td className="px-4 py-3">{statusBadge(d.reviewStatus)}</td>
+      <td className="px-4 py-3">
+        {d.spent ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+            Exited
+          </span>
+        ) : (
+          statusBadge(d.reviewStatus)
+        )}
+      </td>
     </tr>
   );
 }
@@ -173,6 +194,9 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
   const [deposits, setDeposits] = useState<PoolDeposit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [mnemonicVisible, setMnemonicVisible] = useState(false);
+  const [mnemonicCopied, setMnemonicCopied] = useState(false);
   const [customStartBlock, setCustomStartBlock] = useState('');
   const [customEndBlock, setCustomEndBlock] = useState('');
   const [maxIndex, setMaxIndex] = useState('1000');
@@ -189,13 +213,15 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     try {
       const config = getChainConfig(chainId);
       const chain = CHAIN_MAP[chainId];
-      const client = createPublicClient({ chain, transport: http() });
+      const transport = chainId === 1 ? fallback(MAINNET_RPCS.map((url) => http(url))) : http();
+      const client = createPublicClient({ chain, transport });
       const poolConfig = config.pools['ETH'];
       if (!poolConfig) throw new Error('No ETH pool configured');
 
       // Derive PP mnemonic from wallet signature or PRF secrets
-      const mnemonic = await deriveMnemonic(deriveInput);
-      const masterKeys = deriveMasterKeys(mnemonic);
+      const ppMnemonic = await deriveMnemonic(deriveInput);
+      const masterKeys = deriveMasterKeys(ppMnemonic);
+      setMnemonic(ppMnemonic);
 
       // Read pool scope
       const scope = (await client.readContract({
@@ -251,6 +277,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             precommitment,
             deposit,
             reviewStatus: 'scanning',
+            spent: false,
           });
         }
       }
@@ -307,6 +334,61 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
         }
       }
 
+      // Check if deposits have been withdrawn or ragequit by scanning exit events
+      setScanProgress('Checking for already-exited deposits...');
+      const depositorAddresses = new Set(
+        found.filter((d) => d.depositor).map((d) => d.depositor!.toLowerCase())
+      );
+      if (depositorAddresses.size > 0) {
+        const ragequitEvent = parseAbiItem(
+          'event Ragequit(address indexed _ragequitter, uint256 _value, uint256 _spentNullifier, uint256 _newCommitment)'
+        );
+        const withdrawnEvent = parseAbiItem(
+          'event Withdrawn(address indexed _processooor, uint256 _value, uint256 _spentNullifier, uint256 _newCommitment)'
+        );
+        // Collect all addresses that have ragequit or withdrawn
+        // Stealth addresses are single-use, so any exit event for an address means the deposit is spent
+        const exitedAddresses = new Set<string>();
+        const exitChunkSize = BigInt(5000);
+        for (let start = startBlock; start <= endBlock; start += exitChunkSize) {
+          const end =
+            start + exitChunkSize - BigInt(1) > endBlock
+              ? endBlock
+              : start + exitChunkSize - BigInt(1);
+          const [ragequitLogs, withdrawnLogs] = await Promise.all([
+            client.getLogs({
+              address: poolConfig.address as `0x${string}`,
+              event: ragequitEvent,
+              fromBlock: start,
+              toBlock: end,
+            }),
+            client.getLogs({
+              address: poolConfig.address as `0x${string}`,
+              event: withdrawnEvent,
+              fromBlock: start,
+              toBlock: end,
+            }),
+          ]);
+          for (const log of ragequitLogs) {
+            const addr = log.args._ragequitter!.toLowerCase();
+            if (depositorAddresses.has(addr)) {
+              exitedAddresses.add(addr);
+            }
+          }
+          for (const log of withdrawnLogs) {
+            const addr = log.args._processooor!.toLowerCase();
+            if (depositorAddresses.has(addr)) {
+              exitedAddresses.add(addr);
+            }
+          }
+        }
+        for (const d of found) {
+          if (d.depositor && exitedAddresses.has(d.depositor.toLowerCase())) {
+            d.spent = true;
+          }
+        }
+      }
+
       setDeposits(found);
       setScanned(true);
     } catch (err) {
@@ -316,7 +398,11 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     }
   }, [deriveInput, chainId, customStartBlock, customEndBlock, maxIndex, stealthKeys]);
 
-  const totalValue = deposits.reduce((sum, d) => sum + d.deposit.value, BigInt(0));
+  const activeValue = deposits.reduce(
+    (sum, d) => (d.spent ? sum : sum + d.deposit.value),
+    BigInt(0)
+  );
+  const activeCount = deposits.filter((d) => !d.spent).length;
 
   return (
     <div className="mt-8 border-t border-gray-200 pt-6">
@@ -443,12 +529,19 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
               <div>
                 <p className="text-sm font-medium text-text-primary">
                   {deposits.length} deposit{deposits.length !== 1 ? 's' : ''} found
+                  {deposits.length !== activeCount && (
+                    <span className="text-text-muted font-normal">
+                      {' '}
+                      ({activeCount} approved, {deposits.length - activeCount} exited)
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  Total value in pool: {formatEther(totalValue)} ETH
+                  Up to {formatEther(activeValue)} ETH recoverable. Some approved deposits may
+                  already have been withdrawn.
                 </p>
               </div>
-              <p className="text-lg font-bold text-primary">{formatEther(totalValue)} ETH</p>
+              <p className="text-lg font-bold text-primary">{formatEther(activeValue)} ETH</p>
             </div>
           </div>
 
@@ -471,6 +564,114 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
               </tbody>
             </table>
           </div>
+
+          {/* Seed phrase export */}
+          {mnemonic && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#D97706"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  <p className="text-sm font-semibold text-amber-900">Privacy Pools Seed Phrase</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMnemonicVisible(!mnemonicVisible)}
+                    className="text-xs text-amber-700 hover:text-amber-900 transition-colors font-medium"
+                  >
+                    {mnemonicVisible ? 'Hide' : 'Reveal'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(mnemonic);
+                      setMnemonicCopied(true);
+                      setTimeout(() => setMnemonicCopied(false), 2000);
+                    }}
+                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md bg-amber-200 hover:bg-amber-300 text-amber-900 transition-colors"
+                  >
+                    {mnemonicCopied ? (
+                      <>
+                        <svg
+                          className="w-3.5 h-3.5 text-green-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="grid grid-cols-6 gap-2 w-full">
+                  {mnemonic
+                    .split(' ')
+                    .slice(0, 6)
+                    .map((word, i) => (
+                      <div
+                        key={i}
+                        className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm"
+                      >
+                        <span className="text-amber-400 text-xs mr-1">{i + 1}</span>
+                        {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
+                      </div>
+                    ))}
+                </div>
+                <div className="grid grid-cols-6 gap-2 w-full">
+                  {mnemonic
+                    .split(' ')
+                    .slice(6, 12)
+                    .map((word, i) => (
+                      <div
+                        key={i + 6}
+                        className="bg-white border border-amber-200 rounded-md px-2 py-1.5 text-center font-mono text-sm"
+                      >
+                        <span className="text-amber-400 text-xs mr-1">{i + 7}</span>
+                        {mnemonicVisible ? word : '\u2022\u2022\u2022\u2022\u2022'}
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <p className="text-xs text-amber-700 mt-2">
+                This is your Privacy Pools wallet seed phrase. Keep it safe and never share it
+                publicly.
+              </p>
+            </div>
+          )}
 
           {/* Recovery instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
@@ -495,7 +696,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
                   <path d="M12 8h.01" />
                 </svg>
                 <p className="text-sm font-medium text-blue-800">
-                  How to withdraw your Privacy Pool deposits
+                  How to recover your Privacy Pool deposits
                 </p>
               </div>
               <svg
@@ -516,44 +717,43 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             {showGuide && (
               <div className="px-4 pb-4 text-sm text-blue-800 space-y-3">
                 <p>
-                  Each Privacy Pool deposit was made from a stealth address. The table above shows
-                  the matched private key for each deposit.
+                  Your Privacy Pools deposits are controlled by the seed phrase above. Approved
+                  deposits can be privately withdrawn using just the seed phrase. To ragequit a
+                  pending or declined deposit, you also need the depositor&apos;s private key.
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-sm">
                   <li>
-                    Click <strong>&quot;Copy private key&quot;</strong> next to the deposit you want
-                    to withdraw.
-                  </li>
-                  <li>
-                    Import that private key into a wallet (MetaMask, Rabby, or Rainbow). See the
-                    &quot;How to use your private key&quot; guide above for steps.
-                  </li>
-                  <li>
-                    Go to{' '}
+                    <strong>Import your seed phrase</strong> &mdash; Copy the seed phrase above and
+                    import it at{' '}
                     <a
-                      href={PP_UI_URL}
+                      href={`${PP_UI_URL}/account/load`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-600 underline hover:text-blue-800 font-medium"
                     >
-                      privacypools.com
-                    </a>{' '}
-                    and connect the wallet with the imported key.
+                      privacypools.com/account/load
+                    </a>
+                    . Your deposits will appear on your dashboard.
                   </li>
                   <li>
-                    Your deposit will appear in the Privacy Pools UI. From there you can:
-                    <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                      <li>
-                        <strong>Withdraw</strong> (approved deposits) &mdash; private withdrawal to
-                        any address
-                      </li>
-                      <li>
-                        <strong>Ragequit</strong> (declined deposits) &mdash; non-private withdrawal
-                        that returns your funds
-                      </li>
-                    </ul>
+                    <strong>Withdraw approved deposits</strong> &mdash; Approved deposits can be
+                    privately withdrawn via a relayer directly from the Privacy Pools dashboard. No
+                    depositor key needed.
+                  </li>
+                  <li>
+                    <strong>Ragequit pending/declined deposits</strong> &mdash; Copy the
+                    depositor&apos;s private key from the table above and import it into your wallet
+                    (MetaMask, Rabby, or Rainbow). Fund the address with ETH for gas, then initiate
+                    a ragequit from the dashboard.
                   </li>
                 </ol>
+                <div className="bg-blue-100 border border-blue-300 rounded-md p-3 mt-2">
+                  <p className="text-xs text-blue-900">
+                    <strong>Important:</strong> Only the original depositor address can ragequit a
+                    deposit. If you connect a different wallet, you will see the error: &quot;Only
+                    the original depositor can ragequit from this commitment.&quot;
+                  </p>
+                </div>
               </div>
             )}
           </div>
