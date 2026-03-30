@@ -10,7 +10,7 @@ import {
   computePrecommitment,
   getChainConfig,
   scanPoolEvents,
-  getDepositStatus,
+  getDepositStatuses,
   POOL_ABI,
   type ReviewStatus,
   type DepositRecord,
@@ -322,14 +322,38 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
         }
       }
 
-      // Check ASP status for each deposit
+      // Check ASP status for each deposit (batch query with status filter)
       setScanProgress('Checking ASP status...');
-      for (const d of found) {
-        try {
-          const status = await getDepositStatus(config.aspApiBase, chainId, d.precommitment);
-          d.reviewStatus = status?.reviewStatus ?? 'unknown';
-        } catch (err) {
-          console.warn(`Failed to check ASP status for deposit ${d.index}:`, err);
+      const precommitments = new Set(found.map((d) => d.precommitment.toString()));
+      try {
+        const scopeStr = scope.toString();
+        const [approved, declined] = await Promise.all([
+          getDepositStatuses({
+            aspApiBase: config.aspApiBase,
+            chainId,
+            precommitments,
+            status: 'approved',
+            scope: scopeStr,
+          }),
+          getDepositStatuses({
+            aspApiBase: config.aspApiBase,
+            chainId,
+            precommitments,
+            status: 'declined',
+            scope: scopeStr,
+          }),
+        ]);
+        for (const d of found) {
+          const key = d.precommitment.toString();
+          d.reviewStatus = approved.has(key)
+            ? 'approved'
+            : declined.has(key)
+              ? 'declined'
+              : 'pending';
+        }
+      } catch (err) {
+        console.warn('Failed to check ASP status:', err);
+        for (const d of found) {
           d.reviewStatus = 'unknown';
         }
       }
