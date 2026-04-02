@@ -220,7 +220,9 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
         console.warn('Failed to derive mnemonic:', err);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [deriveInput]);
 
   const scanForDeposits = useCallback(async () => {
@@ -667,8 +669,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             </div>
           </div>
           <p className="text-xs text-amber-700 mt-2">
-            This is your Privacy Pools wallet seed phrase. Keep it safe and never share it
-            publicly.
+            This is your Privacy Pools wallet seed phrase. Keep it safe and never share it publicly.
           </p>
         </div>
       )}
