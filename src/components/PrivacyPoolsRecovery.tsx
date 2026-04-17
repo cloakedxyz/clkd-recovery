@@ -239,11 +239,17 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
             <CopyButton label="Copy private key" copied={copiedKey} onCopy={handleCopyKey} />
           </div>
         ) : d.depositor ? (
-          <span
-            className="text-xs text-yellow-600"
-            title="Try 'Derive More' in the stealth addresses section above"
-          >
+          <span className="flex items-center gap-1 text-xs text-yellow-600">
             Not found
+            <span className="relative group">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-yellow-400 text-yellow-500 text-[10px] cursor-help">
+                i
+              </span>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 px-2.5 py-1.5 text-[11px] text-white bg-gray-800 rounded-md shadow-lg z-10 leading-relaxed">
+                This depositor address was created outside the window of derived stealth keys above.
+                Generate more keys in that section, then re-scan.
+              </span>
+            </span>
           </span>
         ) : (
           <span className="text-xs text-text-muted">-</span>
