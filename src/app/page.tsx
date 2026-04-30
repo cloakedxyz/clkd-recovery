@@ -7,6 +7,7 @@ import { genCloakedMessage } from '@cloakedxyz/clkd-stealth';
 import { WalletSelectModal } from '~/components/WalletSelectModal';
 import { PostRecoveryGuide } from '~/components/PostRecoveryGuide';
 import { PrivacyPoolsRecovery } from '~/components/PrivacyPoolsRecovery';
+import { PeerEscrowRecovery } from '~/components/PeerEscrowRecovery';
 import { deriveStealthKeys, deriveStealthKeysFromRaw, type DerivedKey } from '~/lib/deriveKeys';
 import { decryptRecoveryKit, type RecoveryKitFile } from '~/lib/decryptBackup';
 
@@ -1098,6 +1099,18 @@ export default function RecoveryPage() {
                   stealthKeys={derivedKeys}
                 />
               ) : null)}
+
+            {!deriving && derivedKeys.length > 0 && (
+              <PeerEscrowRecovery
+                chainId={8453}
+                defaultRpc={
+                  typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                    ? 'http://localhost:8548'
+                    : ''
+                }
+                stealthKeys={derivedKeys}
+              />
+            )}
           </div>
         )}
       </div>
