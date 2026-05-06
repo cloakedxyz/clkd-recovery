@@ -21,11 +21,12 @@ import {
   discoverChangeCommitments,
   getChainConfig,
   scanPoolEvents,
+  scanPoolWithdrawals,
+  scanPoolRagequits,
   getDepositStatuses,
   type ReviewStatus,
   type DepositRecord,
   type PoolConfig,
-  type WithdrawalRecord,
 } from '@cloakedxyz/clkd-privacy-pools';
 
 interface PoolDeposit {
@@ -426,57 +427,27 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
 
         if (found.length > 0) {
           // ── Spent detection + change commitment tracing ──────────────
-          // Scan Withdrawn + Ragequit events to build a map of spent
-          // nullifier hashes. This replaces the old address-based exit
-          // detection with precise nullifier-based matching, and also
-          // enables tracing change commitments from partial withdrawals.
+          // Scan Withdrawn + Ragequit events. Withdrawn events are keyed by
+          // nullifier hash; Ragequit events are keyed by commitment hash.
           setScanProgress(`Scanning ${poolSymbol} withdrawal events...`);
-          const withdrawnEvent = parseAbiItem(
-            'event Withdrawn(address indexed _processooor, uint256 _value, uint256 _spentNullifier, uint256 _newCommitment)'
-          );
-          const ragequitEvent = parseAbiItem(
-            'event Ragequit(address indexed _ragequitter, uint256 _value, uint256 _spentNullifier, uint256 _newCommitment)'
-          );
-          const spentNullifiers = new Map<
-            bigint,
-            WithdrawalRecord & { via: 'withdrawn' | 'recovered' }
-          >();
-          const exitChunkSize = BigInt(1000);
-          for (let start = startBlock; start <= endBlock; start += exitChunkSize) {
-            checkCancel();
-            const end =
-              start + exitChunkSize - BigInt(1) > endBlock
-                ? endBlock
-                : start + exitChunkSize - BigInt(1);
-            const [withdrawnLogs, ragequitLogs] = await Promise.all([
-              client.getLogs({
-                address: poolAddress as `0x${string}`,
-                event: withdrawnEvent,
-                fromBlock: start,
-                toBlock: end,
-              }),
-              client.getLogs({
-                address: poolAddress as `0x${string}`,
-                event: ragequitEvent,
-                fromBlock: start,
-                toBlock: end,
-              }),
-            ]);
-            for (const log of withdrawnLogs) {
-              spentNullifiers.set(log.args._spentNullifier!, {
-                withdrawnValue: log.args._value!,
-                newCommitment: log.args._newCommitment!,
-                via: 'withdrawn',
-              });
-            }
-            for (const log of ragequitLogs) {
-              spentNullifiers.set(log.args._spentNullifier!, {
-                withdrawnValue: log.args._value!,
-                newCommitment: log.args._newCommitment!,
-                via: 'recovered',
-              });
-            }
-          }
+          const [spentNullifiers, recoveredCommitments] = await Promise.all([
+            scanPoolWithdrawals(
+              client,
+              poolAddress as `0x${string}`,
+              startBlock,
+              endBlock,
+              BigInt(1000),
+              () => checkCancel()
+            ),
+            scanPoolRagequits(
+              client,
+              poolAddress as `0x${string}`,
+              startBlock,
+              endBlock,
+              BigInt(1000),
+              () => checkCancel()
+            ),
+          ]);
 
           // Mark originals as spent using nullifier hashes
           for (const d of found) {
@@ -485,7 +456,10 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
             const spentRecord = spentNullifiers.get(nullifierHash);
             if (spentRecord) {
               d.spent = true;
-              d.spentVia = spentRecord.via;
+              d.spentVia = 'withdrawn';
+            } else if (recoveredCommitments.has(d.deposit.commitment)) {
+              d.spent = true;
+              d.spentVia = 'recovered';
             }
           }
 
