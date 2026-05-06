@@ -6,7 +6,6 @@ import {
   http,
   fallback,
   formatUnits,
-  type Address,
   type Hex,
   type PublicClient,
   parseAbiItem,
@@ -19,7 +18,6 @@ import {
   deriveDepositSecrets,
   computePrecommitment,
   computeNullifierHash,
-  computeScope,
   discoverChangeCommitments,
   getChainConfig,
   scanPoolEvents,
@@ -101,27 +99,6 @@ const SEPOLIA_RPCS = [
 ];
 
 const PP_UI_URL = 'https://privacypools.com';
-const MAINNET_USDT_POOL_ADDRESS = '0xe859C0bD25f260BaEE534Fb52e307D3b64D24572' as Address;
-const MAINNET_USDT_ASSET_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7' as Address;
-const MAINNET_USDT_POOL = {
-  address: MAINNET_USDT_POOL_ADDRESS,
-  type: 'complex',
-  assetAddress: MAINNET_USDT_ASSET_ADDRESS,
-  scope: computeScope(MAINNET_USDT_POOL_ADDRESS, 1, MAINNET_USDT_ASSET_ADDRESS),
-} satisfies PoolConfig;
-
-function getRecoveryChainConfig(chainId: 1 | 11155111) {
-  const config = getChainConfig(chainId);
-  if (chainId !== 1 || config.pools.USDT) return config;
-
-  return {
-    ...config,
-    pools: {
-      ...config.pools,
-      USDT: MAINNET_USDT_POOL,
-    },
-  };
-}
 
 function CopyButton({
   label,
@@ -348,7 +325,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     };
 
     try {
-      const config = getRecoveryChainConfig(chainId);
+      const config = getChainConfig(chainId);
       const chain = CHAIN_MAP[chainId];
       const defaultRpcs = chainId === 1 ? MAINNET_RPCS : SEPOLIA_RPCS;
       const rpcs = customRpc.trim() ? [customRpc.trim(), ...defaultRpcs] : defaultRpcs;
@@ -759,7 +736,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all bg-white"
             >
               <option value="ALL">All pools</option>
-              {Object.keys(getRecoveryChainConfig(chainId).pools).map((sym) => (
+              {Object.keys(getChainConfig(chainId).pools).map((sym) => (
                 <option key={sym} value={sym}>
                   {sym}
                 </option>
@@ -772,7 +749,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
               type="text"
               value={customStartBlock}
               onChange={(e) => setCustomStartBlock(e.target.value.replace(/\D/g, ''))}
-              placeholder={`Default: ${getRecoveryChainConfig(chainId).startBlock.toString()}`}
+              placeholder={`Default: ${getChainConfig(chainId).startBlock.toString()}`}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
             />
           </div>
