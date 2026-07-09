@@ -357,10 +357,17 @@ export default function RecoveryPage() {
     <main className="min-h-screen flex flex-col items-center px-4 py-8">
       {/* Header */}
       <div className="w-full max-w-2xl animate-drop-in">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <img src="/cloaked_logo.png" alt="Cloaked" className="w-10 h-10" />
-            <h1 className="text-2xl font-bold text-text-primary">Cloaked Recovery</h1>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-start gap-3">
+            <img src="/cloaked_logo.png" alt="Cloaked" className="w-10 h-10 mt-0.5" />
+            <div>
+              <h1 className="text-2xl font-bold leading-tight text-text-primary">
+                Cloaked Recovery
+              </h1>
+              <p className="mt-1 text-sm font-medium text-gray-700">
+                Recover your Cloaked stealth address private keys entirely client-side.
+              </p>
+            </div>
           </div>
           {recoveryMethod === 'wallet' && isConnected && address && (
             <div className="flex items-center gap-3 animate-fade-in">
@@ -387,17 +394,42 @@ export default function RecoveryPage() {
             </div>
           )}
         </div>
-        <p className="text-center text-text-muted text-sm mb-6">
-          Recover your Cloaked stealth address private keys entirely client-side.
-        </p>
+      </div>
+
+      {/* Public Source Notice */}
+      <div className="w-full max-w-2xl mb-3 animate-fade-in">
+        <div className="rounded-md border border-gray-200 bg-white px-4 py-3 shadow-card">
+          <div className="flex items-start gap-3">
+            <div className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-primary" />
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Public recovery source</p>
+              <p className="mt-1 text-sm leading-relaxed text-gray-700">
+                This tool is public and can be run locally at any time. The hosted page is provided
+                for convenience; recovery does not depend on this site staying online.{' '}
+                <a
+                  href="https://github.com/cloakedxyz/clkd-recovery"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-primary hover:underline"
+                >
+                  View the source on GitHub
+                </a>
+                .
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Security Warning */}
       <div className="w-full max-w-2xl mb-6 animate-fade-in">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <p className="text-yellow-800 text-sm font-medium text-center">
-            Never share your private keys. All derivation happens locally in your browser.
-          </p>
+        <div className="rounded-md border border-gray-200 bg-white px-4 py-3 shadow-card">
+          <div className="flex items-start gap-3">
+            <div className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />
+            <p className="text-sm font-medium leading-relaxed text-gray-700">
+              Never share your private keys. All derivation happens locally in your browser.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -462,7 +494,7 @@ export default function RecoveryPage() {
                 </div>
               </button>
 
-              {/* Backup File card */}
+              {/* Passkey card */}
               <button
                 onClick={() => {
                   setRecoveryMethod('backup');
@@ -489,9 +521,9 @@ export default function RecoveryPage() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-text-primary">Backup File</p>
+                  <p className="text-sm font-semibold text-text-primary">Passkey</p>
                   <p className="text-sm text-text-muted mt-0.5">
-                    I have an encrypted backup file (.json)
+                    I set up Cloaked with a passkey and have an encrypted backup file
                   </p>
                 </div>
               </button>
