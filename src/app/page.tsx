@@ -392,6 +392,25 @@ export default function RecoveryPage() {
         </p>
       </div>
 
+      {/* Public Source Notice */}
+      <div className="w-full max-w-2xl mb-4 animate-fade-in">
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+          <p className="text-text-primary text-sm text-center leading-relaxed">
+            This recovery tool is public and can be run on your own computer at any time. The
+            hosted page is provided for convenience; recovery does not depend on this site staying
+            online.{' '}
+            <a
+              href="https://github.com/cloakedxyz/clkd-recovery"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-primary hover:underline"
+            >
+              View the source on GitHub.
+            </a>
+          </p>
+        </div>
+      </div>
+
       {/* Security Warning */}
       <div className="w-full max-w-2xl mb-6 animate-fade-in">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
