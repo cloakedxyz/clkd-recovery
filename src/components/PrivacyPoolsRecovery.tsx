@@ -6,14 +6,12 @@ import {
   http,
   fallback,
   formatUnits,
-  type Hex,
   type PublicClient,
   parseAbiItem,
   erc20Abi,
 } from 'viem';
 import { sepolia, mainnet } from 'viem/chains';
 import {
-  deriveMnemonic,
   deriveMasterKeys,
   deriveDepositSecrets,
   computePrecommitment,
@@ -28,6 +26,10 @@ import {
   type DepositRecord,
   type PoolConfig,
 } from '@cloakedxyz/clkd-privacy-pools';
+import {
+  resolvePrivacyPoolsMnemonic,
+  type PrivacyPoolsRecoveryInput,
+} from '~/lib/privacyPoolsRecovery';
 
 interface PoolDeposit {
   /** Symbol (e.g. "ETH", "USDC") — taken from the key in CHAIN_CONFIGS.pools */
@@ -67,16 +69,14 @@ async function resolvePoolDecimals(client: PublicClient, poolConfig: PoolConfig)
   return Number(decimals);
 }
 
-type DeriveInput = { signature: Hex } | { spendSecret: Hex; viewSecret: Hex };
-
 interface StealthKey {
   address: string;
   privateKey: string;
 }
 
 interface Props {
-  /** Entropy source — signature (wallet+PIN) or PRF secrets (backup) */
-  deriveInput: DeriveInput;
+  /** Signature, account keys, or a dedicated mnemonic from a version 2 backup. */
+  recoveryInput: PrivacyPoolsRecoveryInput;
   chainId: 1 | 11155111;
   /** Derived stealth keys from the recovery section above, used to match depositor addresses */
   stealthKeys?: StealthKey[];
@@ -260,7 +260,7 @@ function DepositRow({ deposit: d }: { deposit: PoolDeposit }) {
   );
 }
 
-export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }: Props) {
+export function PrivacyPoolsRecovery({ recoveryInput, chainId, stealthKeys = [] }: Props) {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [deposits, setDeposits] = useState<PoolDeposit[]>([]);
@@ -295,7 +295,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     let cancelled = false;
     (async () => {
       try {
-        const ppMnemonic = await deriveMnemonic(deriveInput);
+        const ppMnemonic = await resolvePrivacyPoolsMnemonic(recoveryInput);
         if (!cancelled) setMnemonic(ppMnemonic);
       } catch (err) {
         console.warn('Failed to derive mnemonic:', err);
@@ -304,7 +304,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
     return () => {
       cancelled = true;
     };
-  }, [deriveInput]);
+  }, [recoveryInput]);
 
   const scanForDeposits = useCallback(async () => {
     setScanning(true);
@@ -336,7 +336,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
       // Derive PP master keys from wallet signature or PRF secrets.
       // The mnemonic is pool-agnostic — per-pool secrets are derived below
       // using each pool's scope.
-      const ppMnemonic = await deriveMnemonic(deriveInput);
+      const ppMnemonic = await resolvePrivacyPoolsMnemonic(recoveryInput);
       const masterKeys = deriveMasterKeys(ppMnemonic);
 
       const latestBlock = await client.getBlockNumber();
@@ -604,7 +604,7 @@ export function PrivacyPoolsRecovery({ deriveInput, chainId, stealthKeys = [] }:
       cancelRef.current = false;
     }
   }, [
-    deriveInput,
+    recoveryInput,
     chainId,
     customStartBlock,
     customEndBlock,
