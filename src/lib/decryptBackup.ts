@@ -20,8 +20,7 @@ import type { Hex } from 'viem';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface RecoveryKitFile {
-  version: 1;
+interface RecoveryKitFileBase {
   hasPassword: true;
   ciphertext: string; // base64
   iv: string; // base64
@@ -30,6 +29,33 @@ export interface RecoveryKitFile {
   /** Last consumed stealth address nonce at time of backup. Helps determine how many addresses to derive. */
   lastConsumedNonce?: number;
 }
+
+export interface RecoveryKitFileV1 extends RecoveryKitFileBase {
+  version: 1;
+}
+
+export interface RecoveryKitFileV2 extends RecoveryKitFileBase {
+  version: 2;
+}
+
+export type RecoveryKitFile = RecoveryKitFileV1 | RecoveryKitFileV2;
+
+export type PrivacyPoolsRecoveryMaterial =
+  | { scheme: 'account-keys-v1' }
+  | { scheme: 'mnemonic-v1'; mnemonic: string };
+
+export type DecryptedRecoveryKit =
+  | {
+      version: 1;
+      pSpend: Hex;
+      pView: Hex;
+    }
+  | {
+      version: 2;
+      pSpend: Hex;
+      pView: Hex;
+      privacyPools: PrivacyPoolsRecoveryMaterial;
+    };
 
 // ---------------------------------------------------------------------------
 // Base64 helpers (cross-platform: browser + Node)
@@ -60,6 +86,104 @@ const PBKDF2_ITERATIONS = 600_000;
 const KEY_LENGTH = 32; // 256 bits
 
 // ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isPrivateKey(value: unknown): value is Hex {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isMnemonic(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().split(/\s+/).length === 12;
+}
+
+function isBase64WithLength(value: unknown, expectedLength: number): value is string {
+  return (
+    isBase64WithMinimumLength(value, expectedLength) &&
+    base64ToBytes(value).length === expectedLength
+  );
+}
+
+function isBase64WithMinimumLength(value: unknown, minimumLength: number): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length % 4 !== 0) return false;
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    return false;
+  }
+
+  try {
+    return base64ToBytes(value).length >= minimumLength;
+  } catch {
+    return false;
+  }
+}
+
+export function isRecoveryKitFile(value: unknown): value is RecoveryKitFile {
+  if (!isRecord(value)) return false;
+  if (value.version !== 1 && value.version !== 2) return false;
+  if (value.hasPassword !== true) return false;
+  // AES-GCM ciphertext includes a 16-byte authentication tag plus non-empty JSON plaintext.
+  if (!isBase64WithMinimumLength(value.ciphertext, 17)) return false;
+  if (!isBase64WithLength(value.iv, 12)) return false;
+  if (!isBase64WithLength(value.salt, 32)) return false;
+  if (!Number.isSafeInteger(value.createdAt) || Number(value.createdAt) < 0) return false;
+  if (
+    value.lastConsumedNonce !== undefined &&
+    (!Number.isSafeInteger(value.lastConsumedNonce) || Number(value.lastConsumedNonce) < 0)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function malformedPayload(): never {
+  throw new Error('Recovery kit payload is malformed');
+}
+
+function parseRecoveryKitPayload(parsed: unknown, fileVersion: 1 | 2): DecryptedRecoveryKit {
+  if (!isRecord(parsed)) return malformedPayload();
+  if (parsed.version !== fileVersion) return malformedPayload();
+  if (!isPrivateKey(parsed.p_spend) || !isPrivateKey(parsed.p_view)) {
+    return malformedPayload();
+  }
+
+  const pSpend = parsed.p_spend;
+  const pView = parsed.p_view;
+  if (fileVersion === 1) {
+    return { version: 1, pSpend, pView };
+  }
+
+  const privacyPools = parsed.privacy_pools;
+  if (!isRecord(privacyPools)) return malformedPayload();
+
+  if (privacyPools.scheme === 'account-keys-v1') {
+    return {
+      version: 2,
+      pSpend,
+      pView,
+      privacyPools: { scheme: 'account-keys-v1' },
+    };
+  }
+
+  if (privacyPools.scheme === 'mnemonic-v1' && isMnemonic(privacyPools.mnemonic)) {
+    return {
+      version: 2,
+      pSpend,
+      pView,
+      privacyPools: {
+        scheme: 'mnemonic-v1',
+        mnemonic: privacyPools.mnemonic.trim().replace(/\s+/g, ' '),
+      },
+    };
+  }
+
+  return malformedPayload();
+}
+
+// ---------------------------------------------------------------------------
 // Decrypt
 // ---------------------------------------------------------------------------
 
@@ -70,9 +194,10 @@ const KEY_LENGTH = 32; // 256 bits
 export async function decryptRecoveryKit(
   kit: RecoveryKitFile,
   password: string
-): Promise<{ pSpend: Hex; pView: Hex }> {
-  if (kit.version !== 1) {
-    throw new Error(`Unsupported recovery kit version: ${kit.version}`);
+): Promise<DecryptedRecoveryKit> {
+  const fileVersion: number = kit.version;
+  if (fileVersion !== 1 && fileVersion !== 2) {
+    throw new Error(`Unsupported recovery kit version: ${fileVersion}`);
   }
 
   const salt = base64ToBytes(kit.salt);
@@ -84,25 +209,20 @@ export async function decryptRecoveryKit(
     dkLen: KEY_LENGTH,
   });
 
-  const decrypted = gcm(key, iv).decrypt(ciphertext);
-
-  // Zero the key immediately after decryption
-  key.fill(0);
-
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(decrypted));
-  decrypted.fill(0);
-
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    !('p_spend' in parsed) ||
-    !('p_view' in parsed) ||
-    typeof (parsed as Record<string, unknown>).p_spend !== 'string' ||
-    typeof (parsed as Record<string, unknown>).p_view !== 'string'
-  ) {
-    throw new Error('Recovery kit payload is malformed');
+  let decrypted: Uint8Array;
+  try {
+    decrypted = gcm(key, iv).decrypt(ciphertext);
+  } finally {
+    // Zero the password-derived key even when authentication fails.
+    key.fill(0);
   }
 
-  const { p_spend, p_view } = parsed as { p_spend: Hex; p_view: Hex };
-  return { pSpend: p_spend, pView: p_view };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(decrypted));
+  } finally {
+    decrypted.fill(0);
+  }
+
+  return parseRecoveryKitPayload(parsed, fileVersion);
 }

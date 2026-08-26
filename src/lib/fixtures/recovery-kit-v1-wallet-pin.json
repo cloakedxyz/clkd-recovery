@@ -1,0 +1,9 @@
+{
+  "hasPassword": true,
+  "ciphertext": "gonzY5oywXvPLDv/pIDvMu8THs5PK8vlD1yBQhW/RqVvGp+7hFlMSMas+/iUk29PCmMuMRBqZMXlEDdeYO0Fqu28lKjjiDgkyQ+6lWEz6yybGiIgHeo3Xa7395j4N3Yq8lzku26EYr2Zf5C+UH/VF6obA0WzBBOQ0Z+FDA8KKhVGDGiojjt7nm2/oIFfj2sUZwQJUsFSR08qrK2dcrm/QJcTj+bupz/oHqs1fKnodTBjtXFzbm3fNS0M",
+  "iv": "A7WR9uPmYZleOqNb",
+  "salt": "scD0bdKa4JDo4osypz0pCV4KhW0q9U0tCQ6PMAztkws=",
+  "createdAt": 1787747022106,
+  "lastConsumedNonce": 7,
+  "version": 1
+}

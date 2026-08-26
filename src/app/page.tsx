@@ -9,12 +9,29 @@ import { PostRecoveryGuide } from '~/components/PostRecoveryGuide';
 import { PrivacyPoolsRecovery } from '~/components/PrivacyPoolsRecovery';
 import { PeerEscrowRecovery } from '~/components/PeerEscrowRecovery';
 import { deriveStealthKeys, deriveStealthKeysFromRaw, type DerivedKey } from '~/lib/deriveKeys';
-import { decryptRecoveryKit, type RecoveryKitFile } from '~/lib/decryptBackup';
+import {
+  decryptRecoveryKit,
+  isRecoveryKitFile,
+  type DecryptedRecoveryKit,
+  type RecoveryKitFile,
+} from '~/lib/decryptBackup';
+import type { PrivacyPoolsRecoveryInput } from '~/lib/privacyPoolsRecovery';
 
 type Step = 'method' | 'connect' | 'pin' | 'sign' | 'backup-upload' | 'backup-decrypt' | 'results';
 
 const BATCH_SIZE = 50;
 const INITIAL_COUNT = 500;
+
+function privacyPoolsInputFromBackup(backup: DecryptedRecoveryKit): PrivacyPoolsRecoveryInput {
+  if (backup.version === 2 && backup.privacyPools.scheme === 'mnemonic-v1') {
+    return { mnemonic: backup.privacyPools.mnemonic };
+  }
+
+  return {
+    spendSecret: backup.pSpend,
+    viewSecret: backup.pView,
+  };
+}
 
 export default function RecoveryPage() {
   const { address, isConnected } = useAccount();
@@ -39,14 +56,14 @@ export default function RecoveryPage() {
   const PAGE_SIZE = 50;
 
   // Backup flow state —
-  // rawKeys holds decrypted spending/viewing keys in memory for "Derive More".
+  // backupMaterial holds decrypted recovery material in memory for "Derive More" and pool recovery.
   // These are sensitive and only live in component state (cleared on unmount / method switch).
   const [backupFile, setBackupFile] = useState<RecoveryKitFile | null>(null);
   const [backupPassword, setBackupPassword] = useState('');
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
   const [backupFileError, setBackupFileError] = useState<string | null>(null);
-  const [rawKeys, setRawKeys] = useState<{ pSpend: Hex; pView: Hex } | null>(null);
+  const [backupMaterial, setBackupMaterial] = useState<DecryptedRecoveryKit | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
@@ -211,8 +228,8 @@ export default function RecoveryPage() {
 
   const handleDeriveMore = async () => {
     const nextStart = derivedKeys.length;
-    if (recoveryMethod === 'backup' && rawKeys) {
-      const { pSpend, pView } = rawKeys;
+    if (recoveryMethod === 'backup' && backupMaterial) {
+      const { pSpend, pView } = backupMaterial;
       await deriveInBatches(
         (s, c) => deriveStealthKeysFromRaw(pSpend, pView, s, c),
         INITIAL_COUNT,
@@ -256,7 +273,7 @@ export default function RecoveryPage() {
       setBackupFile(null);
       setBackupPassword('');
       setDecryptError(null);
-      setRawKeys(null);
+      setBackupMaterial(null);
       setDerivedKeys([]);
       setProgress(0);
       setCurrentPage(0);
@@ -285,21 +302,14 @@ export default function RecoveryPage() {
       try {
         const parsed = JSON.parse(reader.result as string);
 
-        // Validate required fields
-        if (
-          parsed.version !== 1 ||
-          parsed.hasPassword !== true ||
-          typeof parsed.ciphertext !== 'string' ||
-          typeof parsed.iv !== 'string' ||
-          typeof parsed.salt !== 'string'
-        ) {
+        if (!isRecoveryKitFile(parsed)) {
           setBackupFileError(
             "This doesn't look like a Cloaked backup file. Please select the .json file you downloaded during setup."
           );
           return;
         }
 
-        setBackupFile(parsed as RecoveryKitFile);
+        setBackupFile(parsed);
         setStep('backup-decrypt');
       } catch {
         setBackupFileError(
@@ -320,8 +330,9 @@ export default function RecoveryPage() {
     setDecryptError(null);
 
     try {
-      const { pSpend, pView } = await decryptRecoveryKit(backupFile, backupPassword);
-      setRawKeys({ pSpend, pView });
+      const material = await decryptRecoveryKit(backupFile, backupPassword);
+      const { pSpend, pView } = material;
+      setBackupMaterial(material);
       setStep('results');
       // Use nonce hint from backup to derive exactly the addresses the server created,
       // otherwise fall back to the default count
@@ -1112,7 +1123,7 @@ export default function RecoveryPage() {
               derivedKeys.length > 0 &&
               (recoveryMethod === 'wallet' && signature ? (
                 <PrivacyPoolsRecovery
-                  deriveInput={{ signature }}
+                  recoveryInput={{ signature }}
                   chainId={
                     typeof window !== 'undefined' && window.location.hostname === 'localhost'
                       ? 11155111
@@ -1120,9 +1131,9 @@ export default function RecoveryPage() {
                   }
                   stealthKeys={derivedKeys}
                 />
-              ) : recoveryMethod === 'backup' && rawKeys ? (
+              ) : recoveryMethod === 'backup' && backupMaterial ? (
                 <PrivacyPoolsRecovery
-                  deriveInput={{ spendSecret: rawKeys.pSpend, viewSecret: rawKeys.pView }}
+                  recoveryInput={privacyPoolsInputFromBackup(backupMaterial)}
                   chainId={
                     typeof window !== 'undefined' && window.location.hostname === 'localhost'
                       ? 11155111

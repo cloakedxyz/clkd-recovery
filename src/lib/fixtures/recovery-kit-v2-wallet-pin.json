@@ -1,0 +1,9 @@
+{
+  "hasPassword": true,
+  "ciphertext": "2SHDwtpQ313ZjHFuu/qHdDn0YG7AXDrhPW77PgfxzN/FV0EBiQccyEjQa4oV8yA2dSghfG2qyvZm5q7kkUWtIfN1fCHpYMjL9fLXd8wiL9JFBeWXa5T4jfszoPyLNrHRtxZ7ny/T0RIMWEHoBMlaFc0wl+DatbQYZ9aa0GkN0ALdtexxK9J8x9EP715cKtCtRMNhkleikmqJ40GqNsmli2xO6slqgwcni/JhIOp7AqMi5B4gbtInx9ebh5z4hla1iqtAbJun2j2q6hmPq+WAp7LXsXlanV8LsGss4RM3Xs1yY1K0TdXCZ5woEQo3vc4L3ShooEwMRvVKje3nse1qzhYH5ayFncUcxgt2MGGCBOGJsZmhlsssKXBDpXMroeDT4g6MCJs/vv/+TU66EG84j15/GYfkwnCb733Qy59Z",
+  "iv": "yfRMI0Tqw7SzrG16",
+  "salt": "qpWsixoZZefQ8WkmYxwP8/4n9n04TAQiRUU131ufyZQ=",
+  "createdAt": 1787746915964,
+  "lastConsumedNonce": 42,
+  "version": 2
+}
