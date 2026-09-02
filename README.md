@@ -13,7 +13,7 @@ A standalone recovery tool for [Cloaked](https://clkd.xyz) stealth addresses. If
 Two recovery methods are supported:
 
 - **Wallet + PIN** — connect the wallet you used to create your account and enter your 4-digit PIN
-- **Backup file** — upload the encrypted `.json` backup file you downloaded during setup and enter your backup password
+- **Backup file** — upload the encrypted `.json` backup from a passkey or embedded wallet account and enter your backup password
 
 Both paths produce the same output: a table of stealth addresses and their private keys that you can import into any wallet.
 
