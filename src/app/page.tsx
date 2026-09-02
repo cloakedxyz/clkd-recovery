@@ -504,7 +504,7 @@ export default function RecoveryPage() {
                 </div>
               </button>
 
-              {/* Passkey card */}
+              {/* Backup-file card */}
               <button
                 onClick={() => {
                   setRecoveryMethod('backup');
@@ -531,9 +531,9 @@ export default function RecoveryPage() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-text-primary">Passkey</p>
+                  <p className="text-sm font-semibold text-text-primary">Backup file</p>
                   <p className="text-sm text-text-muted mt-0.5">
-                    I set up Cloaked with a passkey and have an encrypted backup file
+                    I have an encrypted backup from a passkey or embedded wallet account
                   </p>
                 </div>
               </button>
